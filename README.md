@@ -4,6 +4,27 @@ Benchflow is a lab planner and Electronic Lab Notebook (ELN) for life science re
 
 Built with **React 19, TypeScript, Vite 8, Tailwind CSS, Zustand, Tiptap, and FastAPI**, with SQLite persistence and local media storage.
 
+## This repository: the Windows desktop app
+
+This is the desktop port of the Benchflow web app. It ships as one program — no Node, no Python,
+no Docker, no browser tab:
+
+- **Install:** `Benchflow-1.0.0-Setup.exe` (per-user, no admin rights). Program in
+  `%LOCALAPPDATA\Programs\Benchflow`; notebook, uploads, WebView2 profile and logs in
+  `%LOCALAPPDATA\Benchflow`. Uninstalling leaves the notebook alone.
+- **Run:** double-click `Benchflow`. One window at a time — a second launch raises the open one.
+  `Benchflow.exe --help` lists the other modes: `--mcp` (read-only notebook tools over stdio),
+  `--backup`, `--restore`, `--import DIR`, `--version`, `--debug`.
+- **Build it:** `packaging\build.ps1`, then check the result with
+  `venv\Scripts\python.exe packaging\test_frozen.py`. Details in `docs/setup.md`.
+- **How it works and what is still unverified:** `docs/adr/0001-...`, `docs/parity-checklist.md`,
+  `docs/security-checklist.md`, `CHANGELOG.md`.
+
+Everything below this line is the feature documentation the web app has — the same application, the
+same API. Where it says `npm run dev` / Vite, that is the web repo's development flow; here the API
+serves the built bundle itself, so `venv\Scripts\python.exe backend\run.py` is enough to develop.
+For MCP from an installed build, use the exe config in `MCP_setup.md`.
+
 ## Features
 
 ### Planning and navigation

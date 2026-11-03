@@ -1,10 +1,14 @@
 """Benchflow notebook MCP server - read-only notebook access over stdio.
 
-Run:  cd backend && ../venv/Scripts/python.exe mcp_server.py
-Env:  BENCHFLOW_DB_PATH=<path> to serve a copy of the notebook without touching the live file.
+Run from the desktop app:  Benchflow.exe --mcp
+Run in dev:                cd backend && ../venv/Scripts/python.exe mcp_server.py
+
+The notebook it serves is the one the app itself uses (app/paths.py), so an agent reads what
+the window shows. BENCHFLOW_DB_PATH=<path> serves a copy instead, without touching the live
+file; BENCHFLOW_DATA_DIR moves both.
 
 Stdout carries MCP JSON-RPC only. `MCPServer.run(transport="stdio")` redirects print/log
-output to stderr; nothing in this file writes to stdout.
+output to stderr; nothing in this file writes to stdout, so logging goes to the app log file.
 """
 import os
 from typing import Optional
@@ -12,7 +16,7 @@ from typing import Optional
 from mcp.server.mcpserver import MCPServer
 from mcp.types import Annotations, ToolAnnotations
 
-from app import notebook_queries
+from app import logpaths, notebook_queries
 from app.notebook_queries import (
     DEFAULT_DB_PATH,
     ExperimentRecord,
@@ -25,8 +29,17 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotent
 EVERYONE = Annotations(audience=["user", "assistant"])
 
 
+def _log(message: str) -> None:
+    """One line per call in the app's own log file - the only way to see what an agent asked
+    for, and the same file the Help & troubleshooting page collects."""
+    logpaths.append(logpaths.backend_log_path(), f"[mcp] {message}")
+
+
 def db_path() -> str:
-    return os.environ.get("BENCHFLOW_DB_PATH") or DEFAULT_DB_PATH
+    """Every tool and resource resolves the notebook through here, so this line counts calls."""
+    path = os.environ.get("BENCHFLOW_DB_PATH") or DEFAULT_DB_PATH
+    _log(f"reading {path}")
+    return path
 
 
 server = MCPServer(
@@ -118,5 +131,19 @@ def section_resource(experiment_id: str, section_key: str) -> dict:
     return notebook_queries.get_section(db_path(), experiment_id, section_key)
 
 
-if __name__ == "__main__":
+def serve() -> int:
+    """Speak MCP on stdio until the client closes the connection.
+
+    Reached from desktop.py's --mcp as well as from this file's __main__: a frozen build's
+    entry point is Benchflow.exe, whose __name__ is never "__main__", so the exe needs a
+    function it can call. Either way this process stays a reader: no web server, no window,
+    nothing written to the notebook.
+    """
+    _log(f"server started (pid {os.getpid()}, db {db_path()})")
     server.run(transport="stdio")
+    _log("server stopped")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(serve())

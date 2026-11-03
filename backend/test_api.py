@@ -18,10 +18,6 @@ TMP = Path(tempfile.mkdtemp(prefix="benchflow_api_"))
 (TMP / "uploads").mkdir()
 os.environ["BENCHFLOW_DATA_DIR"] = str(TMP / "data")
 os.environ["BENCHFLOW_UPLOAD_DIR"] = str(TMP / "uploads")
-# No first-run import: this test manages its own throwaway (empty) notebook, so the
-# desktop import must not fire (it would open a GUI dialog and seed real user data
-# - e.g. a configured backup_dir - into the temp notebook).
-os.environ["BENCHFLOW_NO_IMPORT"] = "1"
 
 from fastapi.testclient import TestClient  # noqa: E402
 

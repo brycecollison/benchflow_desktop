@@ -1,6 +1,6 @@
 import os
-import sys
 import json
+import threading
 import uuid
 import shutil
 from pathlib import Path
@@ -8,16 +8,18 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from urllib.parse import urlsplit
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.schemas import LabState, UploadResponse
 from app.image_processor import process_uploaded_file
 from app.database import init_db, get_session, engine, DB_PATH
-from app.paths import BASE_DIR, DATA_DIR, UPLOAD_DIR, STATE_FILE
+from app.paths import BASE_DIR, DATA_DIR, FRONTEND_DIST, UPLOAD_DIR, STATE_FILE
+from app import seed as seeding
 from app.models import ExperimentDB, ProjectDB, PaperDB
 from app.db_service import (
     init_data_if_empty,
@@ -27,7 +29,6 @@ from app.db_service import (
     get_setting,
     set_setting,
 )
-from app.desktop_import import ensure_data_seeded
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -35,20 +36,6 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # The code tree and the data tree must not share a parent that a sync client watches:
 # app/paths.py lets DATA_DIR/UPLOAD_DIR live in the synced tree while the repo stays out.
 REPO_ROOT = BASE_DIR.parent
-
-
-def _dist_dir() -> Path:
-    """Built frontend, served at "/" on the same origin (no Vite at runtime).
-
-    Frozen: the copy bundled under sys._MEIPASS (see packaging/benchflow.spec).
-    Dev:    this repo's frontend/dist (run `npm run build` to populate it).
-    """
-    if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / "frontend" / "dist"
-    return REPO_ROOT / "frontend" / "dist"
-
-
-DIST_DIR = _dist_dir()
 
 # Default seed state if none exists yet
 DEFAULT_STATE = {
@@ -154,28 +141,6 @@ DEFAULT_STATE = {
 }
 
 
-def _parse_import_arg() -> str | None:
-    """The --import <dir> value, if present (scripting path).
-
-    Checked as an env var first (run.py forwards the CLI arg there, because uvicorn
-    replaces sys.argv), then on the command line (the frozen exe passes it through).
-    """
-    env = (os.environ.get("BENCHFLOW_IMPORT") or "").strip()
-    if env:
-        return env
-    argv = sys.argv[1:]
-    for i, a in enumerate(argv):
-        if a == "--import" and i + 1 < len(argv):
-            return argv[i + 1]
-        if a.startswith("--import="):
-            return a.split("=", 1)[1]
-    return None
-
-
-# First run: seed the desktop data folder (copy, never move) BEFORE any db access.
-# No-op once benchflow.db exists. Source order: --import <dir> > first-run dialog > bundled seed.
-ensure_data_seeded(_parse_import_arg())
-
 # Initialize database immediately on startup
 init_db()
 with Session(engine) as _startup_session:
@@ -187,9 +152,18 @@ async def lifespan(app: FastAPI):
     warn_if_code_in_onedrive()
     with Session(engine) as session:
         init_data_if_empty(session, STATE_FILE, DEFAULT_STATE)
-    yield
-    shutdown_export()
-    shutdown_backup()
+        seeding.ensure_desktop_defaults(session)
+    stop_backup, backup_thread = start_backup_scheduler()
+    try:
+        yield
+    finally:
+        stop_backup.set()
+        shutdown_export()
+        shutdown_backup()
+
+
+if not FRONTEND_DIST.is_dir():
+    print(f"[STARTUP] {FRONTEND_DIST} is missing - run `npm run build` in frontend/. The API still works.", flush=True)
 
 
 def _onedrive_roots():
@@ -275,13 +249,34 @@ def shutdown_export() -> None:
 
 app = FastAPI(title="Lab Planner & ELN API", version="1.0.0", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# One origin: this process serves the built UI too (the mount at the bottom of this file),
+# so no cross-origin access is needed - and in dev the Vite server proxies /api to this port,
+# which is same-origin in the browser as well. The wildcard CORS that used to sit here is
+# gone: it let any web page this browser can reach read the whole notebook, and
+# allow_credentials=True with allow_origins=["*"] is rejected by every browser anyway, so
+# nothing here was relying on it.
+_MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
+_OWN_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+@app.middleware("http")
+async def reject_foreign_origin(request: Request, call_next):
+    """Refuse a write a browser sent from some other site (this app has no CSRF token).
+
+    A browser puts an Origin header on every cross-origin write, so any Origin whose host
+    is not this app's own is rejected. No Origin header means not a browser (curl, the
+    tests, the dev proxy) - a client that already has the same file access as the app.
+    """
+    origin = (request.headers.get("origin") or "").strip()
+    if origin and request.method in _MUTATING:
+        host = (urlsplit(origin).hostname or "").strip("[]")
+        if host not in _OWN_HOSTS:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": f"cross-origin {request.method} from {origin} is not allowed"},
+            )
+    return await call_next(request)
+
 
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
@@ -424,7 +419,7 @@ class BackupConfigPayload(BaseModel):
 
 @app.post("/api/backup/browse")
 def browse_backup_folder(req: BackupConfigPayload):
-    from app.folder_picker import browse_folder
+    from app.dialogs import browse_folder
 
     try:
         return {"dir": browse_folder(req.dir)}
@@ -432,7 +427,7 @@ def browse_backup_folder(req: BackupConfigPayload):
         raise HTTPException(
             status_code=503,
             detail="Could not open the folder browser. Enter the folder path manually instead. "
-            "Browsing requires Python with Tk support and a desktop session on the computer running the app.",
+            "Browsing needs a desktop session on the computer running the app.",
         )
 
 
@@ -468,7 +463,7 @@ def backup_run(session: Session) -> Dict[str, Any]:
 
 
 def shutdown_backup() -> None:
-    """Snapshot to the configured OneDrive folder on shutdown. Never blocks shutdown."""
+    """Snapshot to the configured folder on shutdown. Never blocks shutdown."""
     try:
         with Session(engine) as session:
             if not get_setting(session, "backup_dir"):
@@ -480,6 +475,44 @@ def shutdown_backup() -> None:
             )
     except Exception as e:
         print(f"[WARN] shutdown backup failed: {e}")
+
+
+# -- the schedule ------------------------------------------------------------------
+# The README tells the researcher the app backs up "on exit and every 8 hours while open"; the
+# exit half already existed, this is the periodic half. It reads the same `backup_dir` row that
+# Settings -> Browse writes (app/backup.py: run_configured), so picking a folder in the UI is all
+# it takes to switch on - there is no second setting to keep in step, which is the bug class the
+# plan calls out.
+
+BACKUP_INTERVAL_SECONDS = 8 * 3600
+
+
+def backup_tick() -> Optional[Dict[str, Any]]:
+    """One scheduled backup. None when no folder is configured, which means the schedule is off."""
+    from app.backup import run_configured
+
+    return run_configured()
+
+
+def _backup_loop(stop: threading.Event) -> None:
+    """Back up every BACKUP_INTERVAL_SECONDS while the window is open. The first tick is one
+    interval away on purpose: a backup at launch would slow the window down for no safety."""
+    while not stop.wait(BACKUP_INTERVAL_SECONDS):
+        try:
+            summary = backup_tick()
+            if summary:
+                print(f"[backup] scheduled -> {summary.get('dest')} "
+                      f"({summary.get('copied', 0)} new attachments)", flush=True)
+        except Exception as e:  # a bad folder, a drive that went away: the app must keep working
+            print(f"[WARN] scheduled backup failed: {e}", flush=True)
+
+
+def start_backup_scheduler() -> tuple[threading.Event, threading.Thread]:
+    """Start the schedule and hand back what stops it (the lifespan calls .set() on close)."""
+    stop = threading.Event()
+    thread = threading.Thread(target=_backup_loop, args=(stop,), name="benchflow-backup", daemon=True)
+    thread.start()
+    return stop, thread
 
 
 @app.get("/api/backup/config")
@@ -544,9 +577,12 @@ async def upload_file(file: UploadFile = File(...)):
     )
 
 
-# Serve the built React app from the same origin. Mounted LAST so /api and /uploads
-# keep precedence. No SPA history fallback: the app has no router (views live in the
-# Zustand store), so a plain StaticFiles(html=True) is enough. Guarded so the backend
-# still starts in dev when frontend/dist has not been built yet.
-if DIST_DIR.is_dir():
-    app.mount("/", StaticFiles(directory=str(DIST_DIR), html=True), name="frontend")
+# -- The built UI, from this same origin ------------------------------------------
+# One origin and one port: no Vite at runtime, no :5173, and /api + /uploads are same-origin
+# for the webview. Mounted last so /api/* and /uploads/* keep precedence, html=True so "/"
+# serves dist/index.html. No SPA fallback on purpose: the app never deep-links (views are
+# switched in the Zustand store), so a bad path should stay an error rather than quietly
+# returning index.html. dist lands here from `npm run build` in dev, and from the spec's
+# datas when frozen (paths.FRONTEND_DIST resolves both).
+if FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="app")

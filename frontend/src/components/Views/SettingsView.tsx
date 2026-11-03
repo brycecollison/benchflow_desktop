@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Cloud, Save, RefreshCw } from 'lucide-react';
+import { Cloud, HardDrive, Save, RefreshCw } from 'lucide-react';
 
 interface LastBackup {
   at: string;
@@ -24,8 +24,14 @@ interface BackupConfig {
 
 const gb = (n: number) => (n / 1e9).toFixed(2);
 
+interface Health {
+  db_path: string;
+  uploads_dir: string;
+}
+
 export const SettingsView: React.FC = () => {
   const [bcfg, setBcfg] = useState<BackupConfig | null>(null);
+  const [health, setHealth] = useState<Health | null>(null);
   const [bdir, setBdir] = useState('');
   const [bbusy, setBbusy] = useState(false);
   const [browsing, setBrowsing] = useState(false);
@@ -35,11 +41,12 @@ export const SettingsView: React.FC = () => {
 
   const load = useCallback(async () => {
     try {
-      const bres = await fetch('/api/backup/config');
+      const [bres, hres] = await Promise.all([fetch('/api/backup/config'), fetch('/api/health')]);
       if (!bres.ok) throw new Error(`HTTP ${bres.status}`);
       const b: BackupConfig = await bres.json();
       setBcfg(b);
       setBdir(b.dir ?? '');
+      if (hres.ok) setHealth(await hres.json());
     } catch (e: any) {
       setBerr(`Could not load settings: ${e.message}`);
     }
@@ -182,6 +189,27 @@ export const SettingsView: React.FC = () => {
             )}
           </div>
         </div>
+
+        {health && (
+          <div className="rounded-lg border border-[var(--line)] overflow-hidden max-w-xl">
+            <div className="flex items-center gap-2 px-3 py-2 bg-[var(--card)] border-b border-[var(--line)]">
+              <HardDrive size={15} className="text-[var(--acc)]" />
+              <div className="min-w-0">
+                <h4 className="m-0 font-semibold text-sm">This app's notebook</h4>
+                <span className="text-[11px] text-[var(--mut)]">
+                  Everything you type here is saved in the files below - and only here. Another
+                  install of Benchflow (or the web app) has its own copy; the two are not linked,
+                  and neither one sees the other's edits. The backup above is what moves a notebook
+                  between machines.
+                </span>
+              </div>
+            </div>
+            <div className="p-3 text-[11px] text-[var(--mut)] space-y-0.5 font-mono break-all">
+              <p className="m-0">notebook: {health.db_path}</p>
+              <p className="m-0">uploads: {health.uploads_dir}</p>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

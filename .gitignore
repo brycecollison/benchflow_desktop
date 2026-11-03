@@ -52,12 +52,14 @@ desktop.ini
 # Local notebook data (database, JSON snapshot) - lives with the app, never in Git,
 # and can be relocated with BENCHFLOW_DATA_DIR (see backend/app/paths.py)
 /backend/data/
-
-# The bundled data seed ships WITH the desktop app (it is what a clean machine
-# imports on first run), so it IS version-controlled despite the rules above.
-!seed/
-!seed/**
-!seed/data/*.db
-
-# PyInstaller onedir build output
-/dist/
+# --- desktop build (this repo) ---
+# 54 MB of seed media: rebuilt by packaging\build.ps1 from the web repo.
+# (Files already tracked from the first vendor commit stay tracked; this rule keeps
+# rebuilt/regenerated ones out of the next commit.)
+/seed/uploads/
+# The notebook itself is small and is what a clean machine imports on first run,
+# so it is version-controlled despite the `*.db` rule above.
+!/seed/benchflow.db
+/packaging/build/
+/packaging/dist/
+/packaging/output/
