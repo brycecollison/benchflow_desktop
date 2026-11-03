@@ -27,6 +27,7 @@ from app.db_service import (
     get_setting,
     set_setting,
 )
+from app.desktop_import import ensure_data_seeded
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -152,6 +153,28 @@ DEFAULT_STATE = {
     ]
 }
 
+
+def _parse_import_arg() -> str | None:
+    """The --import <dir> value, if present (scripting path).
+
+    Checked as an env var first (run.py forwards the CLI arg there, because uvicorn
+    replaces sys.argv), then on the command line (the frozen exe passes it through).
+    """
+    env = (os.environ.get("BENCHFLOW_IMPORT") or "").strip()
+    if env:
+        return env
+    argv = sys.argv[1:]
+    for i, a in enumerate(argv):
+        if a == "--import" and i + 1 < len(argv):
+            return argv[i + 1]
+        if a.startswith("--import="):
+            return a.split("=", 1)[1]
+    return None
+
+
+# First run: seed the desktop data folder (copy, never move) BEFORE any db access.
+# No-op once benchflow.db exists. Source order: --import <dir> > first-run dialog > bundled seed.
+ensure_data_seeded(_parse_import_arg())
 
 # Initialize database immediately on startup
 init_db()
