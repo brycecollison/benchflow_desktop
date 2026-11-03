@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import uuid
 import shutil
@@ -33,6 +34,20 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # The code tree and the data tree must not share a parent that a sync client watches:
 # app/paths.py lets DATA_DIR/UPLOAD_DIR live in the synced tree while the repo stays out.
 REPO_ROOT = BASE_DIR.parent
+
+
+def _dist_dir() -> Path:
+    """Built frontend, served at "/" on the same origin (no Vite at runtime).
+
+    Frozen: the copy bundled under sys._MEIPASS (see packaging/benchflow.spec).
+    Dev:    this repo's frontend/dist (run `npm run build` to populate it).
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "frontend" / "dist"
+    return REPO_ROOT / "frontend" / "dist"
+
+
+DIST_DIR = _dist_dir()
 
 # Default seed state if none exists yet
 DEFAULT_STATE = {
@@ -504,3 +519,11 @@ async def upload_file(file: UploadFile = File(...)):
         size=size,
         metadata=metadata if metadata else None
     )
+
+
+# Serve the built React app from the same origin. Mounted LAST so /api and /uploads
+# keep precedence. No SPA history fallback: the app has no router (views live in the
+# Zustand store), so a plain StaticFiles(html=True) is enough. Guarded so the backend
+# still starts in dev when frontend/dist has not been built yet.
+if DIST_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(DIST_DIR), html=True), name="frontend")
