@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+venv/
+.venv/
+env/
+ENV/
+
+# Build artifacts
+dist/
+frontend/dist/
+build/
+*.tsbuildinfo
+.vite/
+
+# Python cache & environment
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+.mypy_cache/
+
+# Uploaded experimental media & large microscopy datasets (ND2, TIFF)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Logs & temp files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local SQLite databases & WAL
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Environment variables & local configurations
+.env
+.env.*
+!.env.example
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Local notebook data (database, JSON snapshot) - lives with the app, never in Git,
+# and can be relocated with BENCHFLOW_DATA_DIR (see backend/app/paths.py)
+/backend/data/
+
+# The bundled data seed ships WITH the desktop app (it is what a clean machine
+# imports on first run), so it IS version-controlled despite the rules above.
+!seed/
+!seed/**
+!seed/data/*.db
+
+# PyInstaller onedir build output
+/dist/

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "benchflow-notebook": {
+      "command": "C:/Users/bryce/Desktop/Repos/Benchflow_desktop/venv/Scripts/python.exe",
+      "args": ["backend/mcp_server.py"],
+      "description": "Read-only Benchflow lab notebook: list projects, search experiments, retrieve experiment records, sections and attachment metadata.",
+      "exposure": "direct"
+    }
+  }
+}

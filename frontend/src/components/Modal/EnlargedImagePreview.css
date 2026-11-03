@@ -1,0 +1,22 @@
+.image-preview-surface { position: relative; }
+button.image-enlarge-control {
+  position: absolute; top: 6px; right: 6px; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 5px; border: 0; border-radius: 5px; background: rgb(209 213 219 / 50%);
+  color: #6b7280; opacity: 0.5; cursor: pointer;
+  transition: transform 150ms ease, opacity 150ms ease;
+}
+.image-preview-surface:hover > .image-enlarge-control,
+.image-preview-surface:focus-within > .image-enlarge-control,
+button.image-enlarge-control:focus-visible { opacity: 1; transform: scale(1.12); }
+.enlarged-image-dialog {
+  position: fixed; inset: 0; width: 100vw; max-width: none; height: 100dvh; max-height: none;
+  margin: 0; padding: 0; border: 0; background: transparent; overflow: hidden;
+}
+.enlarged-image-dialog[open] { display: flex; align-items: center; justify-content: center; }
+.enlarged-image-dialog::backdrop { background: rgb(35 35 35 / 75%); }
+.enlarged-image-window { position: relative; padding: 12px; max-width: 96vw; background: rgb(50 50 50 / 75%); border-radius: 8px; box-shadow: 0 20px 60px #0008; }
+.enlarged-image-window > img { display: block; height: 90dvh; max-width: calc(96vw - 24px); object-fit: contain; }
+.enlarged-image-window > .image-enlarge-control { opacity: 1; }
+button.image-open-viewer { position: absolute; top: 8px; left: 8px; padding: 6px 10px; border: 1px solid #ffffff40; background: rgb(35 35 35 / 80%); color: #eee; font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { button.image-enlarge-control { transition: none; } }

@@ -1,0 +1,20 @@
+fastapi>=0.115.0
+uvicorn>=0.30.0
+pydantic>=2.8.0
+sqlmodel>=0.0.22
+aiofiles>=24.1.0
+python-multipart>=0.0.9
+pillow>=12.0.0
+tifffile>=2026.0.0
+nd2>=0.12.0
+aspose-note-foss>=26.9.0
+imagecodecs>=2026.10.10
+
+# MCP SDK for backend/mcp_server.py. Pinned exactly: the server uses the 2.x
+# MCPServer API, and pip upgrades of mcp change the tool/annotation surface.
+# Re-run backend/test_mcp.py after any bump.
+mcp==2.3.0
+
+# --- dev-only (not bundled into the exe; see packaging/benchflow.spec) ---
+pytest>=8.0.0
+httpx>=0.28.0
