@@ -6,9 +6,9 @@ of the web app: the browser version and its data folder keep working, untouched.
 
 | | |
 | --- | --- |
-| App code (repo of record) | `C:/Users/bryce/Desktop/Repos/Lab Planner and ELN` |
+| The web app (source of the first copy) | `C:/Users/bryce/Desktop/Repos/Lab Planner and ELN` |
 | This repo | a **complete, independent copy** of the app — backend, frontend, tests — plus desktop packaging. Forked once from the web repo, then maintained separately. |
-| Path notation | `upstream/...` = a path in the web repo. Anything else is relative to this repo. |
+| Path notation | `<web-repo>/...` = a path in `Lab Planner and ELN`. Anything else is relative to this repo. |
 
 ---
 
@@ -37,7 +37,7 @@ One installed application that:
 - No two-way sync between the web app and the desktop app (see §7 risk 1).
 - No new features while porting.
 
-## 3. What exists today (verified, not assumed)
+## 3. What the web app looks like today (verified, not assumed)
 
 | Area | Fact |
 | --- | --- |
@@ -57,8 +57,8 @@ One installed application that:
 | Security | CORS `allow_origins=["*"]`, no auth, and `POST /api/lab/state` replaces the whole database. |
 | Dev checks | Five `frontend/scripts/*-check.cjs` drive a browser at `:5173`. Dev mode must stay intact. |
 
-Data for the desktop build comes from `upstream/backend/data/benchflow.db` (1.4 MB),
-`upstream/backend/data/lab_state.json` and `upstream/backend/uploads/` (54 MB).
+Data for the desktop build is seeded from `<web-repo>/backend/data/benchflow.db` (1.4 MB),
+`<web-repo>/backend/data/lab_state.json` and `<web-repo>/backend/uploads/` (54 MB).
 
 ---
 
@@ -71,7 +71,9 @@ One Python process: uvicorn on an ephemeral 127.0.0.1 port, `/api` and `/uploads
 today, `"/"` serving the built React app, wrapped in a native window. WebView2 is
 already installed on Windows 10/11, so no Chromium is bundled.
 
-This is a packaging job, not a port: the app is already local-first and offline.
+Most of this is packaging, not rewriting: the app is already local-first and offline, and
+its code moves over intact. The work is the executable, the window, the data location, and
+proving nothing broke.
 
 Rejected, with reasons:
 
@@ -110,12 +112,12 @@ web app does not appear here until someone ports it. Keep it cheap:
   shows the patch to re-apply by hand.
 - Keep the file layout identical to the web repo where a desktop change is not forced, so
   those diffs stay readable.
-- Desktop-only files live in new places (`desktop.py`, `packaging/`), never inline in files
-  that upstream also edits — fewer merge conflicts.
+- Desktop-only files live in new places (`backend/desktop.py`, `packaging/`), never inline
+  in files the web repo also edits — fewer merge conflicts.
 
 Because the copy is ours, the awkward parts are just normal edits in this repo: mount
-`dist/`, tighten CORS, replace the tkinter dialog. No monkeypatching, no upstream PRs, no
-pinning.
+`dist/`, tighten CORS, replace the tkinter dialog. No monkeypatching, no pull requests
+into the web repo, no version pinning between the two.
 
 ## 5. Target architecture
 
@@ -142,7 +144,6 @@ OneDrive\BenchflowBackup\        ← its own snapshot folder, separate from the 
 
 MCP clients keep reading the SQLite file directly: `Benchflow.exe --mcp` with
 `BENCHFLOW_DB_PATH=%LOCALAPPDATA%\Benchflow\data\benchflow.db`.
-```
 
 
 ## 6. Phases
@@ -209,9 +210,10 @@ reversible for the desktop copy until these two pass.**
 2. `benchflow.spec`: **onedir** (not onefile — onefile re-extracts 250 MB on every launch
    and will look like a hang). `contents_collection` for `frontend/dist`.
    Hidden imports / `collect_submodules` for: `aspose.note`, `tifffile`, `nd2`,
-   `imagecodecs`, `skimage` bits pulled by `image_processor.py`, `winreg`, `tkinter`
-   (only if Phase 3 keeps it). Exclude `pip`, `pywin32`'s `pythonwin`, `pywin32_system32`
-   leftovers, `pytest`, the `tests/` tree.
+   `imagecodecs`, `skimage` bits pulled by `image_processor.py`, `winreg`. Exclude `pip`,
+   `pywin32`'s `pythonwin`, `pywin32_system32`
+   leftovers, `pytest`, the `tests/` tree, and `tkinter` (Phase 3 deletes the only file
+   that imports it, `app/folder_picker.py`).
 3. `backend/app/image_processor.py` must be exercised from inside the frozen build —
    `tifffile`/`nd2`/`imagecodecs` load binary plugins and are the usual PyInstaller
    failure here.
@@ -224,7 +226,7 @@ the process and assert the shutdown snapshot ran. Unpacked size expectation 150�
 
 ### Phase 3 — The window (1 day)
 
-**Files:** `desktop.py`, `backend/app/main.py` (`/api/backup/browse`); delete this repo's
+**Files:** `backend/desktop.py`, `backend/app/main.py` (`/api/backup/browse`); delete this repo's
 `backend/app/folder_picker.py` + `backend/tests/test_folder_picker.py`
 
 1. `webview.create_window("Benchflow", url, width, height)` + `webview.start()`.
@@ -263,9 +265,9 @@ Four modes in one executable — no extra binaries:
 | `Benchflow.exe --backup` | `python -m app.backup` in Task Scheduler and in the dev launcher's exit hook |
 | `Benchflow.exe --restore <dir>` | the manual "copy the snapshot back" step (optional, cheap) |
 
-`backend/app/backup.py` keeps its own CLI so the dev repo is unaffected; `--backup` is a
-thin wrapper over `backup_run()` in `main.py` so the scheduled task records the same
-"last backup" the Settings card shows. `mcp_server.py` itself does not change.
+`backend/app/backup.py` keeps its own CLI for this repo's dev flow; `--backup` is a thin
+wrapper over `backup_run()` in `main.py` so the scheduled task records the same "last
+backup" the Settings card shows. `mcp_server.py` itself does not change.
 
 Update `MCP_setup.md` client JSON to the exe path plus
 `BENCHFLOW_DB_PATH=%LOCALAPPDATA%\Benchflow\data\benchflow.db`, and keep the existing
@@ -316,11 +318,11 @@ backup → restart → the MCP client reads it.
 | --- | --- | --- |
 | 1 | **The copied notebook drifts from the web app's.** Two installs, two databases; an edit in one is invisible to the other, and the user will not notice until a month of notes is in the wrong place | Be explicit in the UI and the README about which notebook the desktop app owns. Seeding is one-way and asked-for; a later `--import` writes a *new* db and says so rather than merging rows. Decide the source of truth (open question 1). |
 | 1b | **The codebases drift too** (separate repos, by design) | `UPSTREAM.md` records the vendored SHA; `git log/diff <sha>..HEAD` in the web repo is the porting queue. Do the desktop-only work in new files so those diffs stay readable. |
-| 2 | **PyInstaller + `imagecodecs`/`tifffile`/`nd2` binary plugins fail inside `_MEIPASS`** — TIFF/ND2 preview generation dies silently | `packaging/test_frozen.py` uploads real `.tif`, `.nd2`, `.xlsx` from `backend/uploads/` and asserts previews. If a hook is hopeless, drop OneNote/TIFF support from v1 rather than ship a broken importer. |
+| 2 | **PyInstaller + `imagecodecs`/`tifffile`/`nd2` binary plugins fail inside `_MEIPASS`** — TIFF/ND2 preview generation and OneNote import die silently | `packaging/test_frozen.py` uploads real `.tif`, `.nd2`, `.xlsx` from `uploads/` and asserts previews. Fix it in the spec (`collect_submodules`, `collect_data_files`, `copy_metadata` for the dist-info `imagecodecs`/`tifffile` need); **do not** solve it by deleting the feature — that breaks the parity requirement. Expect this phase to take the extra day. |
 | 3 | **WebView2 runtime missing** on an older machine → blank window | Probe the Evergreen/Flat RC registry key at startup; if absent, print the URL and open the default browser instead of showing a dead window. |
 | 4 | **Two instances writing one SQLite file** | Single-instance lock (Phase 3). MCP stays read-only. |
 | 5 | Live db left in a OneDrive-synced folder → online-only placeholders and `benchflow-DESKTOP-ABC.db` conflict copies | Data defaults to `%LOCALAPPDATA%`; keep `warn_if_code_in_onedrive()` and keep the snapshot as the only thing that travels. Do **not** switch to WAL — `TRUNCATE`+`synchronous=FULL` in `app/database.py` is deliberate. |
-| 6 | Free-port change silently breaks something hard-coding 8000 | MCP reads the db file, not HTTP, so it is unaffected; dev keeps 8000. Grep for `8000` before shipping. |
+| 6 | Free-port change silently breaks something hard-coding 8000 | MCP reads the db file, not HTTP, so it is unaffected; this repo's dev keeps 8000. Grep for `8000` before shipping. |
 | 7 | Bundle is large (150–250 MB unpacked) | Accept it. If it matters, the big wins are `dask` (17 M), `cryptography` (11 M) and pywin32's `pythonwin` (5 M) — all droppable without touching app code. |
 
 ---
@@ -376,9 +378,10 @@ them once against the built app.
    and the README has to say it, or notes land in the wrong app.
 2. **Keep the browser as a client** (multi-device / remote access)? If yes, Phase 5's
    session token stops being optional and the app needs real auth.
-3. **Is OneNote import still used?** `aspose-note-foss` + the 958-line
-   `app/onenote_importer.py` are a large share of the bundle. Deleting them is the cheapest
-   size win on the list — but only if the feature is dead.
+3. **Bundle size** — `aspose-note-foss` + the 958-line `app/onenote_importer.py` and the
+   imaging stack dominate it. Parity says they stay; if size ever becomes a problem, they
+   are the first things to negotiate away, and that is a product decision, not a packaging
+   one.
 4. **Sign the binary?** Unsigned means a SmartScreen prompt on every new build.
 
 ## 10. Build order
