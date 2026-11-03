@@ -35,7 +35,7 @@ One installed application that:
 - No rewrite of the frontend, and **no changes to the web app** — its code, its
   `backend/data`, its `backend/uploads`, `start-dev.*` and Vite proxy all stay as they are.
 - No two-way sync between the web app and the desktop app (see §7 risk 1).
-- No new features while porting.
+- No new features beyond the web app's — feature parity, not expansion.
 
 ## 3. What the web app looks like today (verified, not assumed)
 
@@ -148,8 +148,9 @@ MCP clients keep reading the SQLite file directly: `Benchflow.exe --mcp` with
 
 ## 6. Phases
 
-Every phase lands green on its own and leaves dev mode working. Effort is for one
-developer; total ≈ 5 working days, and Phase 2 is the only genuinely uncertain part.
+Every phase lands green on its own and leaves this repo's dev mode working. Effort is for
+one developer; total ≈ 5 working days after the source snapshot (§4.1, 2 h), and Phase 2 is
+the only genuinely uncertain part.
 
 ### Phase 0 — Single origin, no Vite at runtime (½ day) — do this first
 
@@ -170,7 +171,7 @@ file, open a preview image. `start-dev.ps1` still works and the five
 
 **Frontend changes: none.** Relative paths now hit the same origin.
 
-### Phase 1 — Copy the data in (2 h) — highest blast radius, so do it early
+### Phase 1 — Copy the data in (2 h) — do it early; it is the only phase that touches real data
 
 **Files:** new `backend/app/seed.py`, `backend/app/paths.py`, `README.md`
 
@@ -183,8 +184,9 @@ add `APP_ROOT` = `sys._MEIPASS` when frozen, else this repo's `backend/`.
 Seeding, on first launch before `init_db()`:
 
 1. If the desktop db does not exist, copy `benchflow.db`, `lab_state.json` and all of
-   `uploads/` in — from `%LOCALAPPDATA%`-adjacent defaults, from a folder the user picks
-   in a first-run dialog, or from `Benchflow.exe --import <dir>`. Ask once; do not guess.
+   `uploads/` in. Source, in order: a folder the user picks in the first-run dialog
+   (prefilled with `<web-repo>/backend/` if that path still exists on this machine), or
+   `Benchflow.exe --import <dir>` for scripting. Ask once; never guess a path.
 2. **Copy, never move.** The web app's `backend/data` and `backend/uploads` are opened
    read-only and left exactly as found. Do not rename, delete or "clean up" them.
 3. Never overwrite an existing desktop file. If the desktop db already exists, seeding does
