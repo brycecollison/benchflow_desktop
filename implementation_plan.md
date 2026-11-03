@@ -1,10 +1,14 @@
 # Benchflow Desktop — Implementation Plan
 
-Port of **Lab Planner & ELN** (`../Lab Planner and ELN`) from a browser + two dev
-servers into one self-contained Windows desktop application.
+A self-contained Windows **desktop build of Lab Planner & ELN** — the same app, in one
+`.exe`, with its **own copy** of the data. It is a second install, **not** a replacement
+of the web app: the browser version and its data folder keep working, untouched.
 
-Source repo of record: `C:/Users/bryce/Desktop/Repos/Lab Planner and ELN`
-All file paths below are relative to that repo unless stated otherwise.
+| | |
+| --- | --- |
+| App code (repo of record) | `C:/Users/bryce/Desktop/Repos/Lab Planner and ELN` |
+| This repo | a **complete, independent copy** of the app — backend, frontend, tests — plus desktop packaging. Forked once from the web repo, then maintained separately. |
+| Path notation | `upstream/...` = a path in the web repo. Anything else is relative to this repo. |
 
 ---
 
@@ -15,17 +19,22 @@ One installed application that:
 1. Opens from the Start Menu with an icon, no terminal, no browser tab.
 2. Runs the FastAPI backend and the built React UI **in one installation**, on one
    origin, with no Node or Python installed by the user.
-3. Keeps the notebook where it is today (`benchflow.db` + `uploads/`) and migrates the
-   existing data on first launch.
+3. Has its **own** data folder, seeded on first run by **copying** the existing
+   `benchflow.db` + `uploads/` into it (one-way; the web app's files are never modified,
+   moved or deleted).
 4. Keeps every existing guarantee: shutdown backup to OneDrive, SharePoint export,
    read-only MCP access, restore from a backup folder.
+5. Has **complete feature parity** with the web app — verified by the checklist in §8.1, not
+   assumed.
 
 ## 2. Non-goals
 
 - No auto-updater, no code signing, no Microsoft Store. Decide later.
 - No macOS/Linux build in the first pass (the spec is portable; the OneDrive/`winreg`
   logic is already guarded by `OSError`).
-- No rewrite of the frontend. The React app is unchanged except where a phase says so.
+- No rewrite of the frontend, and **no changes to the web app** — its code, its
+  `backend/data`, its `backend/uploads`, `start-dev.*` and Vite proxy all stay as they are.
+- No two-way sync between the web app and the desktop app (see §7 risk 1).
 - No new features while porting.
 
 ## 3. What exists today (verified, not assumed)
@@ -46,8 +55,10 @@ One installed application that:
 | OneDrive detect | `main.py:165` reads `HKCU\Software\Microsoft\OneDrive\Accounts`, falls back to env vars, guarded by `OSError`. |
 | MCP | `backend/mcp_server.py` is a **stdio** server reading the SQLite file directly (`BENCHFLOW_DB_PATH`), not HTTP. Port changes do not affect it; data-dir changes do. |
 | Security | CORS `allow_origins=["*"]`, no auth, and `POST /api/lab/state` replaces the whole database. |
----
 | Dev checks | Five `frontend/scripts/*-check.cjs` drive a browser at `:5173`. Dev mode must stay intact. |
+
+Data for the desktop build comes from `upstream/backend/data/benchflow.db` (1.4 MB),
+`upstream/backend/data/lab_state.json` and `upstream/backend/uploads/` (54 MB).
 
 ---
 
@@ -71,6 +82,41 @@ Rejected, with reasons:
 | Edge/Chrome `--app` mode | Cheapest window there is, but the window is owned by the shared browser process, so you cannot reliably detect close — that silently drops `shutdown_export()` and `shutdown_backup()`, which the README promises. |
 | Keep a launcher script + require Python/Node | Not self-contained; keeps the per-machine venv/wheel breakage documented in the README troubleshooting section. |
 
+### 4.1 Two entirely separate repositories
+
+This repo is a standalone app. It gets its **own copy** of `backend/`, `frontend/`, the
+tests and the dev scripts, imported once from the web repo, and after that the two repos
+do not share files, submodules or a build. Nothing here reads or writes the web repo's
+source or its data folder.
+
+One-time source snapshot (do this before any desktop work):
+
+```powershell
+cd C:\Users\bryce\Desktop\Repos\Benchflow_desktop
+git -C "..\Lab Planner and ELN" archive --format=tar HEAD | tar -x   # or: robocopy, excluding venv/ node_modules/ .git/ uploads/ data/
+copy-item ..\Lab Planner and ELN\backend\data\benchflow.db .\seed\   # data seed, copied not moved
+```
+
+Record the imported SHA in `UPSTREAM.md` (`vendored-from: <sha>`, date). Then get a green
+baseline **in this repo, before changing anything**: `npm ci && npm run build` in
+`frontend/`, `pip install -r backend/requirements.txt`, `pytest backend/tests`. That is the
+reference point every later desktop failure is compared against.
+
+What this costs, stated plainly: **two codebases.** A fix or a new feature landed in the
+web app does not appear here until someone ports it. Keep it cheap:
+
+- `UPSTREAM.md` holds the SHA. `git -C "..\Lab Planner and ELN" log --oneline <sha>..HEAD`
+  lists what you have not ported; `git -C "..\Lab Planner and ELN" diff <sha>..HEAD -- backend/app/main.py`
+  shows the patch to re-apply by hand.
+- Keep the file layout identical to the web repo where a desktop change is not forced, so
+  those diffs stay readable.
+- Desktop-only files live in new places (`desktop.py`, `packaging/`), never inline in files
+  that upstream also edits — fewer merge conflicts.
+
+Because the copy is ours, the awkward parts are just normal edits in this repo: mount
+`dist/`, tighten CORS, replace the tkinter dialog. No monkeypatching, no upstream PRs, no
+pinning.
+
 ## 5. Target architecture
 
 ```
@@ -86,16 +132,17 @@ Benchflow.exe  (PyInstaller onedir, one process)
        ├─ create_file_dialog(FOLDER_CHOOSER) → replaces tkinter folder_picker.py
        └─ WEBVIEW2_USER_DATA_FOLDER → persists the existing localStorage prefs
 
-%LOCALAPPDATA%\Benchflow\        ← data leaves the code tree
-  ├─ data/benchflow.db, lab_state.json
+%LOCALAPPDATA%\Benchflow\        ← the desktop app's OWN data; the web app's tree is
+  ├─ data/benchflow.db, lab_state.json    never opened for writing
   ├─ uploads/
   └─ webview/            WebView2 profile
 <install dir>\           read-only; frontend/dist lives in sys._MEIPASS
-OneDrive\BenchflowBackup\        ← unchanged snapshot target
+OneDrive\BenchflowBackup\        ← its own snapshot folder, separate from the web app's
 ```
 
 MCP clients keep reading the SQLite file directly: `Benchflow.exe --mcp` with
 `BENCHFLOW_DB_PATH=%LOCALAPPDATA%\Benchflow\data\benchflow.db`.
+```
 
 
 ## 6. Phases
@@ -105,51 +152,60 @@ developer; total ≈ 5 working days, and Phase 2 is the only genuinely uncertain
 
 ### Phase 0 — Single origin, no Vite at runtime (½ day) — do this first
 
-**Files:** `backend/app/main.py`
+**Files:** `backend/app/main.py` (this repo's copy)
 
 1. After the `/uploads` mount and after all routes, add
    `app.mount("/", StaticFiles(directory=<dist>, html=True))`. Mount it **last** so
    `/api` and `/uploads` keep precedence. No SPA fallback route (no router).
 2. Resolve `dist` from a module-level constant that Phase 2 will switch to `sys._MEIPASS`;
-   in dev it is `<repo>/frontend/dist`.
-3. Do not touch `frontend/vite.config.ts` or `start-dev.ps1` / `start-dev.sh`.
+   in dev it is `<this repo>/frontend/dist`.
+3. Keep `frontend/vite.config.ts` and `start-dev.*` working — they are how this repo is
+   developed. The web repo has its own copies; neither knows about the other.
 
 **Acceptance:** `npm --prefix frontend run build`, then `python run.py`, then
 `http://127.0.0.1:8000/` is the whole app — navigate every view, save state, upload a
-file, open a preview image. `bash start-dev.sh` still works and the five
+file, open a preview image. `start-dev.ps1` still works and the five
 `frontend/scripts/*-check.cjs` browser checks still pass against `:5173`.
 
 **Frontend changes: none.** Relative paths now hit the same origin.
 
-### Phase 1 — Data out of the code tree + migration (½ day) — highest blast radius
+### Phase 1 — Copy the data in (2 h) — highest blast radius, so do it early
 
-**Files:** `backend/app/paths.py`, one small new `app/migrate.py`, `README.md`
+**Files:** new `backend/app/seed.py`, `backend/app/paths.py`, `README.md`
 
-1. Defaults when frozen: `DATA_DIR = %LOCALAPPDATA%\Benchflow\data`,
-   `UPLOAD_DIR = %LOCALAPPDATA%\Benchflow\uploads`. Env-var overrides unchanged, so
-   the existing multi-machine `BENCHFLOW_DATA_DIR` workflow survives.
-2. `BASE_DIR` must not be used as a data root once frozen (`paths.py:12` is
-   `Path(__file__).parent.parent`, which lands inside the read-only bundle). Add
-   `APP_ROOT` = `sys._MEIPASS` when frozen, else the repo backend dir.
-3. One-time migration on first launch, before `init_db()`: if the new db does not exist
-   and the old one does, copy `benchflow.db`, `lab_state.json` and every file in the old
-   `uploads/` into the new location, then rename the old tree to `data.pre-migration/`
-   and `uploads.pre-migration/` rather than deleting it. Never overwrite an existing file.
+Defaults in this repo's `paths.py`: `DATA_DIR = %LOCALAPPDATA%\Benchflow\data`,
+`UPLOAD_DIR = %LOCALAPPDATA%\Benchflow\uploads` (env-var overrides still win, so a
+developer can point this build at any folder). `BASE_DIR` must not be a data root once
+frozen (`paths.py:12` = `Path(__file__).parent.parent` lands inside the read-only bundle);
+add `APP_ROOT` = `sys._MEIPASS` when frozen, else this repo's `backend/`.
 
-**Acceptance:** point a fresh build at a **copy** of the real `backend/data` +
-`backend/uploads` (54 MB, the actual notebook). Assert project/experiment counts, every
-attachment still resolves under `/uploads/...`, and that opening a preview works. Then
-run the restore path (`Settings → Personal OneDrive Backup`) against a previous snapshot.
-**Do not proceed to Phase 2 until this has been tested on a copy twice.**
+Seeding, on first launch before `init_db()`:
+
+1. If the desktop db does not exist, copy `benchflow.db`, `lab_state.json` and all of
+   `uploads/` in — from `%LOCALAPPDATA%`-adjacent defaults, from a folder the user picks
+   in a first-run dialog, or from `Benchflow.exe --import <dir>`. Ask once; do not guess.
+2. **Copy, never move.** The web app's `backend/data` and `backend/uploads` are opened
+   read-only and left exactly as found. Do not rename, delete or "clean up" them.
+3. Never overwrite an existing desktop file. If the desktop db already exists, seeding does
+   not run — later imports go through an explicit `--import <dir>` that writes to a new
+   `benchflow-imported-<timestamp>.db` and tells the user, rather than merging rows.
+4. `uploads/` paths are stored relative to `UPLOAD_DIR`, so a copied tree resolves as-is —
+   no path rewriting in the db.
+
+**Acceptance:** run the seed against a **copy** of the real web data (54 MB, the actual
+notebook) and assert project/experiment counts, that every attachment resolves under
+`/uploads/...`, and that a preview image opens. Then run restore
+(`Settings → Personal OneDrive Backup`) against a previous snapshot. **Nothing here is
+reversible for the desktop copy until these two pass.**
 
 ### Phase 2 — Freeze the backend (1–2 days, the risky phase)
 
 **Files:** new `packaging/benchflow.spec`, new `backend/desktop.py` (entry point),
 `backend/requirements.txt` (add `pyinstaller` under a dev-only section)
 
-1. `desktop.py`: strip `reload=True` from the uvicorn path (`run.py` stays as the dev
-   entry). Pick a free port with the bind-socket-0 trick, start uvicorn in a thread, poll
-   `/api/health` until it answers, then open the window. Keep binding **127.0.0.1**.
+1. `desktop.py`: strip `reload=True` from the uvicorn path (`run.py` stays as this repo's
+   dev entry). Pick a free port with the bind-socket-0 trick, start uvicorn in a thread,
+   poll `/api/health` until it answers, then open the window. Keep binding **127.0.0.1**.
 2. `benchflow.spec`: **onedir** (not onefile — onefile re-extracts 250 MB on every launch
    and will look like a hang). `contents_collection` for `frontend/dist`.
    Hidden imports / `collect_submodules` for: `aspose.note`, `tifffile`, `nd2`,
@@ -168,8 +224,8 @@ the process and assert the shutdown snapshot ran. Unpacked size expectation 150�
 
 ### Phase 3 — The window (1 day)
 
-**Files:** `backend/desktop.py`, delete `backend/app/folder_picker.py` + `backend/tests/test_folder_picker.py`,
-`backend/app/main.py` (`/api/backup/browse`)
+**Files:** `desktop.py`, `backend/app/main.py` (`/api/backup/browse`); delete this repo's
+`backend/app/folder_picker.py` + `backend/tests/test_folder_picker.py`
 
 1. `webview.create_window("Benchflow", url, width, height)` + `webview.start()`.
    Set `WEBVIEW2_USER_DATA_FOLDER=%LOCALAPPDATA%\Benchflow\webview` **before** import,
@@ -179,9 +235,10 @@ the process and assert the shutdown snapshot ran. Unpacked size expectation 150�
    existing `lifespan` shutdown runs `shutdown_export()` and `shutdown_backup()` exactly
    as the dev launcher does today. Also install a `SIGTERM` handler.
 3. Replace the folder dialog: `/api/backup/browse` calls a pywebview
-   `create_file_dialog(webview.FOLDER_CHOOSER)` instead of the tkinter subprocess. Keep
-   the existing 503 fallback message for when the dialog is unavailable, and keep the
-   manual path entry in Settings.
+   `create_file_dialog(webview.FOLDER_CHOOSER)` instead of the tkinter subprocess (there is
+   no usable `sys.executable` in a frozen app, so the shipped `folder_picker.py` cannot
+   work). Keep the existing 503 fallback message for when the dialog is unavailable, and
+   keep the manual path entry in Settings.
 4. Single-instance lock: a named mutex/lockfile. A second launch focuses the first window
    and exits. Two writers on one SQLite file is the one way to corrupt the notebook.
 5. Icon, window title, and a Start-Menu shortcut with an `AppUserModelID` so the taskbar
@@ -248,8 +305,8 @@ is rejected while the app's own origin still saves; `backend/test_api.py` still 
 3. Ship the onedir zip as the portable fallback.
 
 **Acceptance:** on a clean Windows profile with **no** Node, Python or manually installed
-WebView2: install → launch → migrated notebook opens → upload → backup → restart → the MCP
-client reads it.
+WebView2: install → launch → first-run import pulls in the copied notebook → upload →
+backup → restart → the MCP client reads it.
 
 ---
 
@@ -257,7 +314,8 @@ client reads it.
 
 | # | Risk | Mitigation |
 | --- | --- | --- |
-| 1 | **Migration destroys the only copy of the notebook** (real data, 54 MB of attachments, no undo) | Test on a copy twice before Phase 2; migration renames the old tree instead of deleting it; verify a `Settings → Backup` snapshot restore works. |
+| 1 | **The copied notebook drifts from the web app's.** Two installs, two databases; an edit in one is invisible to the other, and the user will not notice until a month of notes is in the wrong place | Be explicit in the UI and the README about which notebook the desktop app owns. Seeding is one-way and asked-for; a later `--import` writes a *new* db and says so rather than merging rows. Decide the source of truth (open question 1). |
+| 1b | **The codebases drift too** (separate repos, by design) | `UPSTREAM.md` records the vendored SHA; `git log/diff <sha>..HEAD` in the web repo is the porting queue. Do the desktop-only work in new files so those diffs stay readable. |
 | 2 | **PyInstaller + `imagecodecs`/`tifffile`/`nd2` binary plugins fail inside `_MEIPASS`** — TIFF/ND2 preview generation dies silently | `packaging/test_frozen.py` uploads real `.tif`, `.nd2`, `.xlsx` from `backend/uploads/` and asserts previews. If a hook is hopeless, drop OneNote/TIFF support from v1 rather than ship a broken importer. |
 | 3 | **WebView2 runtime missing** on an older machine → blank window | Probe the Evergreen/Flat RC registry key at startup; if absent, print the URL and open the default browser instead of showing a dead window. |
 | 4 | **Two instances writing one SQLite file** | Single-instance lock (Phase 3). MCP stays read-only. |
@@ -267,27 +325,53 @@ client reads it.
 
 ---
 
-## 8. Definition of done
+## 8.1 Feature parity checklist
+
+Parity is a list of the web app's features with a pass/fail against the **installed**
+`.exe` — not "the code is the same, so it works". Every row is run once on a machine with
+no Node or Python. Any ✗ is a release blocker; the reason is recorded in `CHANGELOG.md`.
+
+| Feature (web app) | Where it lives | Desktop check against the installed exe |
+| --- | --- | --- |
+| Project/experiment CRUD, phases, todo, notes, attachments upload + preview | `app/main.py`, `Attachments.tsx`, `CodeViewer.tsx` | Create, edit, reload, still there; attachment thumbnails render |
+| Image previews (TIFF, ND2, microcopy) | `app/image_processor.py`, `/uploads` mount | Upload a real `.nd2` and `.tif` → `_preview.png` exists (this is the PyInstaller failure mode, so it is tested here) |
+| XLSX/CSV viewer | `SpreadsheetViewer.tsx`, `parse-spreadsheet.ts` | Open a real xlsx from `uploads/` |
+| OneNote import (.one) | `app/onenote_importer.py` | Import the same `.one` file as the web app, compare experiment counts |
+| Lab notebook: save/restore, snapshots, attachments, reagent DB, template | `app/lab_state.py`, `app/lab_images.py`, `app/lab_attachments.py`, `app/reagents.py`, `app/lab_units.py`, `LabNotebookView.tsx` | Save state, restart, state restored; image upload + attachment + snapshot + the `mL` template all work |
+| SharePoint (.docx) export | `app/sharepoint_export.py`, `winreg` OneDrive detect | Settings → Browse gives a **native** dialog; export lands in the chosen folder; Cancel leaves the path unchanged |
+| OneDrive online backup + shutdown backup | `app/backup.py`, `main.py:432` | Scheduled `--backup` appends to `history/` (keep 14); closing the window also appends |
+| Restore from a backup folder | `/api/backup/restore` | Restore an older snapshot, notebook matches |
+| MCP tools, read-only | `mcp_server.py` | `Benchflow.exe --mcp` answers `tools/list` + `tools/call` from an MCP client config |
+| Prefs in localStorage (`lab_sidebar_width`, `lab_calendar_tray_open`, `lab_snap_grid`, …) | frontend store | Restart the app → width/tray/grid settings kept (needs the WebView2 profile dir) |
+| Safety nets | `app/consistency.py`, `app/mcp_safety.py`, `lab_units` validation, `lab_state` code validation | Consistency scan, "what connects to what", reagent volume input all behave |
+
+The five `frontend/scripts/*-check.cjs` scripts copied into this repo are the fast
+regression net: point them at the desktop dev port during development, and at least run
+them once against the built app.
+
+### 8.2 Launch checklist
 
 - [ ] Double-click launch: window, app icon in the taskbar, no console, no browser tab.
 - [ ] No Node or Python on the target machine; `npm` and `venv` are build-time only.
-- [ ] Existing notebook migrated and verified; the pre-migration copy still on disk.
+- [ ] First-run import verified against a copy of the real data; the web app's own data
+      folder is byte-for-byte unchanged afterwards.
+- [ ] Every row of §8.1 passes against the installed exe.
 - [ ] Upload → TIFF/ND2 preview works in the frozen build (`test_frozen.py` green).
 - [ ] Closing the window runs the shutdown export + backup; `history/` grows.
-- [ ] `Benchflow.exe --mcp` serves the same tools as today; `MCP_setup.md` updated.
+- [ ] `Benchflow.exe --mcp` serves the same tools as the web repo's `mcp_server.py`; `MCP_setup.md` updated.
 - [ ] `Benchflow.exe --backup` works as the scheduled task.
 - [ ] Settings backup / SharePoint cards work with the native folder dialog; Cancel
       leaves the configured path unchanged.
 - [ ] Foreign-origin writes to `/api/lab/state` are rejected; `test_api.py` passes.
-- [ ] `bash start-dev.sh`, `start-dev.ps1`, `python run.py` and the five
-      `frontend/scripts/*-check.cjs` browser checks still work — dev flow untouched.
+- [ ] This repo's dev flow works: `start-dev.ps1`, `python run.py`, the five
+      `*-check.cjs` scripts, `pytest`.
 
 ## 9. Open questions — answer before Phase 5
 
-1. **One machine or several?** The current workflow is two machines sharing OneDrive. With
-   data in `%LOCALAPPDATA%`, each install owns its notebook and only the snapshot travels.
-   Is per-machine notebook + restore-from-backup the intent, or does `BENCHFLOW_DATA_DIR`
-   point at a synced folder (which re-opens risk 5)?
+1. **Which notebook is the source of truth now?** Two installs, two databases. Is the
+   desktop app the one you use daily (and the web app becomes a fallback / demo), or the
+   other way round? Nothing else in the plan changes, but the user-facing copy in Settings
+   and the README has to say it, or notes land in the wrong app.
 2. **Keep the browser as a client** (multi-device / remote access)? If yes, Phase 5's
    session token stops being optional and the app needs real auth.
 3. **Is OneNote import still used?** `aspose-note-foss` + the 958-line
@@ -298,16 +382,22 @@ client reads it.
 ## 10. Build order
 
 ```
+source snapshot (§4.1, green in this repo)
+        |
+        v
 0 single-origin ──> 2 PyInstaller ──> 3 window ──> 4 modes ──> 6 installer
         |                                        \
-        +--> 1 data + migration (test on a copy twice) --> 5 API hardening
+        +--> 1 copy data in -----------------------> 5 API hardening
 ```
 
-Phase 1 may run in parallel with Phase 2, but must land and be verified before any build
-is installed on the machine holding the real notebook. Phase 5 is small enough to fold into
-Phase 0 — never to skip it.
+Nothing starts until the snapshot builds and tests green in this repo. Phase 1 may run in
+parallel with Phase 2, but must be verified before a build is installed on the machine that
+holds the real data. Phase 5 is one hour and can fold into Phase 0 — never skipped.
 
-## Appendix — anchors in the current code
+## Appendix — anchors in the code
+
+The snapshot copies these files into this repo, so the line numbers below apply to both
+until the two diverge.
 
 | Concern | Where |
 | --- | --- |
