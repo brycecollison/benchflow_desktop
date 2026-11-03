@@ -325,7 +325,9 @@ backup → restart → the MCP client reads it.
 
 ---
 
-## 8.1 Feature parity checklist
+## 8. Feature parity and definition of done
+
+### 8.1 Feature parity checklist
 
 Parity is a list of the web app's features with a pass/fail against the **installed**
 `.exe` — not "the code is the same, so it works". Every row is run once on a machine with
