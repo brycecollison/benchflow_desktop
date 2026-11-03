@@ -20,9 +20,9 @@ __pycache__/
 *.pytest_cache/
 .mypy_cache/
 
-# Uploaded experimental media & large microscopy datasets (ND2, TIFF)
+# Uploaded experimental media & large microscopy datasets (ND2, TIFF) - the web layout's
+# folder; this build writes to %LOCALAPPDATA%\Benchflow (app/paths.py)
 backend/uploads/*
-!backend/uploads/.gitkeep
 
 # Logs & temp files
 *.log

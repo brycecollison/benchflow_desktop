@@ -6,7 +6,7 @@ The desktop app owns %LOCALAPPDATA%\\Benchflow. The web app's `backend/data` +
 edit in one is invisible to the other, so an import is always asked for and always says
 what it did.
 
-Rules (implementation_plan.md §Phase 1):
+Rules:
 - Never overwrite an existing desktop file. If `benchflow.db` is already there, the copy
   goes to `benchflow-imported-<timestamp>.db` instead of merging rows, and the caller is
   told - the desktop notebook is not silently replaced.

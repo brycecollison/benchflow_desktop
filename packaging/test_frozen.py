@@ -9,7 +9,7 @@ failure mode is a binary plugin that only breaks inside _MEIPASS, and it is invi
 TIFF preview is asked for. Everything the run writes goes into a throwaway BENCHFLOW_DATA_DIR,
 so it never touches the notebook in %LOCALAPPDATA% or the seed folder it reads.
 
-What it proves (implementation_plan.md Phase 2 + Phase 4 acceptance):
+What it proves (packaging acceptance):
   the exe starts, /api/health answers, and GET / returns the built UI out of the bundle;
   a real .tif and .xlsx upload works, and the .tif gets a _preview.png next to it;
   a graceful close runs the closing backup (a new snapshot lands in history/);

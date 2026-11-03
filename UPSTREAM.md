@@ -24,6 +24,21 @@ those diffs stay readable. Desktop-only code lives in new files (`backend/deskto
 
 Bump `vendored-from` when the port lands.
 
+## Files the desktop build does not need
+
+Deleted from the vendored copy; none is referenced by the app or by its checks.
+
+| Path | Why it went |
+|---|---|
+| `frontend/README.md` | create-vite boilerplate (`# React + TypeScript + Vite`) |
+| `frontend/src/App.css` | nothing imports it - styles live in `index.css` plus the component CSS files |
+| `frontend/src/assets/hero.png`, `react.svg`, `vite.svg` | create-vite boilerplate; the hero image the UI shows ships inside the notebook (`seed/uploads`) |
+| `frontend/public/icons.svg` | no reference in `src/` or `index.html` |
+| `backend/uploads/` (`/.gitkeep`) | the web layout's data folder. This build writes to `%LOCALAPPDATA%\Benchflow` (`app/paths.py`) |
+
+`tests/test_parity_with_web.py` fails on any *other* web-app file that goes missing; these are in
+its `DROPPED` set, so a future re-vendor does not quietly re-add them.
+
 ## Data seed
 
 `seed/` (gitignored except the notebook itself) is a **copy** of the web app's data at the

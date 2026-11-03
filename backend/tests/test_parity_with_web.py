@@ -38,6 +38,15 @@ SHARED = ["backend/app", "frontend/src", "frontend/public"]
 SHARED_FILES = ["backend/mcp_server.py", "backend/requirements.txt", "frontend/package.json",
                 "frontend/vite.config.ts", "backend/tests/test_backup.py",
                 "backend/tests/test_sharepoint_export.py"]
+# Web-app files this repo dropped on purpose, each one referenced by nothing in the app or its
+# checks (see UPSTREAM.md). Anything missing that is NOT listed here still fails the test.
+DROPPED = {
+    "frontend/src/App.css",              # nothing imports it; styles live in index.css + component CSS
+    "frontend/src/assets/hero.png",      # the hero image ships inside the notebook (seed/uploads)
+    "frontend/src/assets/react.svg",     # create-vite boilerplate
+    "frontend/src/assets/vite.svg",      # create-vite boilerplate
+    "frontend/public/icons.svg",         # no sprite/import reference anywhere
+}
 
 
 def _read(path: Path) -> bytes:
@@ -63,7 +72,8 @@ def _missing_from_desktop() -> tuple[list[str], list[str], list[str]]:
             missing.append(f"{rel_folder}/ (present in one repo, not the other)")
             continue
         web_files, desk_files = _files(there), _files(here)
-        missing += [f"{rel_folder}/{f}" for f in sorted(web_files - desk_files)]
+        missing += [f"{rel_folder}/{f}" for f in sorted(web_files - desk_files)
+                    if f"{rel_folder}/{f}" not in DROPPED]
         extra += [f"{rel_folder}/{f}" for f in sorted(desk_files - web_files)]
         for name in sorted(web_files & desk_files):
             if _read(there / name) != _read(here / name):

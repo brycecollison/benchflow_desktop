@@ -64,7 +64,7 @@ Everything below does its job and exits; none of them opens a window.
 | `Benchflow.exe` | open the window (the only mode that does) |
 | `Benchflow.exe --backup` | snapshot the notebook + referenced attachments into the backup folder set in Settings, keeping 14 snapshots in `history\` |
 | `Benchflow.exe --restore` | restore the newest snapshot from that backup folder |
-| `Benchflow.exe --restore "D:\old-backup"` | restore from another backup folder (`--force` to overwrite an existing notebook) |
+| `Benchflow.exe --restore "D:\old-backup"` | restore from another backup folder (refuses if the current notebook holds records - move it aside first) |
 | `Benchflow.exe --import DIR` | copy a web-app-style notebook folder in (`--force` to replace) |
 | `Benchflow.exe --mcp` | serve the read-only MCP tools over stdio — for `pi`, LM Studio, or any MCP client |
 | `Benchflow.exe --version` | print the version and exit |

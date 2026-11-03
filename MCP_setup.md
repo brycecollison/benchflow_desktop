@@ -4,7 +4,7 @@ This guide wires up a local coding-agent session where:
 
 - **LM Studio** serves the local LLM (OpenAI-compatible API on port 1234).
 - **pi** runs the agent and, per session, **launches the Benchflow MCP server itself** as a stdio subprocess (`backend/mcp_server.py`).
-- The MCP server reads `backend/data/benchflow.db` **read-only** and exposes 3 tools + 4 resources.
+- The MCP server reads this install's notebook (`%LOCALAPPDATA%\Benchflow\data\benchflow.db`) **read-only** and exposes 3 tools + 4 resources.
 
 ```text
 pi session (agent)
@@ -22,7 +22,7 @@ Note: LM Studio is the **model provider**, not the MCP host. pi spawns the MCP s
 |---|---|
 | This repo checked out | `backend/mcp_server.py` exists |
 | Per-machine Python venv with the pinned MCP SDK | `& "$env:USERPROFILE\.venvs\lab-planner-eln\Scripts\python.exe" -c "from importlib.metadata import version; print(version('mcp'))"` prints `2.3.0` |
-| Notebook database exists | `backend\data\benchflow.db` (start the app once if missing — the MCP server never seeds it) |
+| Notebook database exists | `%LOCALAPPDATA%\Benchflow\data\benchflow.db` (start the app once if missing — the MCP server never seeds it) |
 | LM Studio installed, ≥1 model in the library | e.g. `swift-1.5-qwen3.8-27b` |
 | pi installed | `pi --version` |
 
@@ -111,7 +111,7 @@ pi --provider lmstudio --model swift-1.5-qwen3.8-27b
 | pi starts with **no MCP tools** | Project trust not granted; pi not started from the repo root (relative paths); project file shadowed by a same-named user-level entry |
 | Server fails to start / no tools in `pi mcp list` | Run it by hand to see the error: `& "$env:USERPROFILE\.venvs\lab-planner-eln\Scripts\python.exe" backend/mcp_server.py`. JSON on Windows needs escaped backslashes for absolute paths. First start is slow (scientific Python imports) — raise the client's startup timeout rather than assuming a crash |
 | `pydantic_core` / binary-extension import errors | A `pip install mcp` ran in a venv built by a different Python. Rebuild the venv and `pip install -r backend\requirements.txt` |
-| Tools answer with **no records** | `backend\data\benchflow.db` missing or stale (check `BENCHFLOW_DB_PATH`); archived projects need `include_archived: true`; unsaved browser edits never reach the database |
+| Tools answer with **no records** | `%LOCALAPPDATA%\Benchflow\data\benchflow.db` missing or stale (check `BENCHFLOW_DB_PATH`); archived projects need `include_archived: true`; unsaved browser edits never reach the database |
 | Model loads, then pi is slow to answer | Expected for 27B-class models on a single GPU — not an MCP problem |
 
 ## Limits to keep in mind
