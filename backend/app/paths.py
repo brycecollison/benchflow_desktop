@@ -51,6 +51,9 @@ DATA_DIR = _resolve("BENCHFLOW_DATA_DIR", APP_DATA_DIR / "data")
 # moves the whole set with it - there is one knob for "where this build writes".
 UPLOAD_DIR = _resolve("BENCHFLOW_UPLOAD_DIR", DATA_DIR.parent / "uploads")
 LOG_DIR = _resolve("BENCHFLOW_LOG_DIR", DATA_DIR.parent / "logs")
+# Where a downloaded installer lands (app/update.py). Deliberately not inside the code tree, and
+# not inside the sync folder: an installer is this machine's file, and it must never travel.
+UPDATE_DIR = APP_DATA_DIR / "updates"
 DB_PATH = DATA_DIR / "benchflow.db"
 STATE_FILE = DATA_DIR / "lab_state.json"
 

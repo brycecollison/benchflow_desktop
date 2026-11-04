@@ -10,6 +10,7 @@ import { GanttView } from './components/Views/GanttView';
 import { SettingsView } from './components/Views/SettingsView';
 import { ExperimentModal } from './components/Modal/ExperimentModal';
 import { GlobalDialogModal } from './components/Modal/GlobalDialogModal';
+import { UpdatePrompt } from './components/Modal/UpdatePrompt';
 
 export const App: React.FC = () => {
   const { view, isLoading, loadError, fetchInitialState, isDarkMode } = useLabStore();
@@ -69,6 +70,9 @@ export const App: React.FC = () => {
 
       {/* In-page Dialog Popups (Confirm, Prompt, Alert) */}
       <GlobalDialogModal />
+
+      {/* Corner card for an installed build with a newer release on GitHub */}
+      <UpdatePrompt />
     </div>
   );
 };

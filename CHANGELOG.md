@@ -3,6 +3,51 @@
 Dates are the day the work was checked against a build, not the day it was written.
 The web app is the reference implementation — see `UPSTREAM.md` for which commit was vendored.
 
+## 1.0.1 — OneDrive sync and in-app updates
+
+### The OneDrive folder is a sync folder, not an archive
+
+A backup used to be one-way: the folder got a copy of this computer's notebook, and whatever the
+folder already held was never read. Two computers pointed at one folder therefore overwrote each
+other. At startup the app now pulls the folder's notebook in before anything else opens it, and
+when the window closes it publishes what this machine has - so each one has the other's work next
+time. A push is refused while the folder holds a notebook this machine has not matched, and a real
+conflict keeps both copies (data\benchflow-conflict-<stamp>.db, attachments alongside) instead of
+choosing one. A machine syncing for the first time adopts the folder's notebook only if its own is
+empty; an existing notebook without a shared baseline is a conflict. Later pulls preserve the prior
+notebook in data\benchflow-replaced-<stamp>.db. `--backup` from a scheduled task publishes only - it never
+pulls, because a pull would replace a notebook the open window still has open - and it now exits
+non-zero when the guard refuses instead of reporting success. An open window keeps publishing on
+close and every 8 hours; it does not pull while it is up, which is what pulling at startup is for.
+`test_sync.py` is the decision table; the two-laptop row in `docs/parity-checklist.md` is not
+automatable.
+
+Safety review: publishes now stage the database before replacing the shared file, preserve unique
+history snapshots, and refuse unreadable remote notebooks. Pulls stage and validate attachments
+before replacing local data, preserve committed SQLite WAL records, and discard remote machine
+settings. Attachment name collisions fail without overwriting either file. A local lock prevents
+overlapping scheduler, CLI and UI sync operations; it is not a cross-computer OneDrive lock.
+
+### Updating from inside the app
+
+An installed build asks GitHub for the newest release once per window and, when there is one, offers
+to download the setup program and run it; Settings -> Updates does the same on demand. Downloading
+changes nothing (about 65 MB into the app's own `updates\` folder), and installing replaces the
+program only - the notebook, uploads, settings and the backup folder setting stay where they are,
+which is what the uninstaller already guaranteed in reverse. Let Setup close the window rather than
+killing the process, because closing is what publishes this notebook. A source checkout or the web app
+never sees the card, because neither has an installer to run. `Benchflow.exe --version` prints the
+build you are on; `test_update.py` covers the version compare, the folder guard and the download, and
+the download itself is a manual row (it is the GitHub CDN, not ours). README's "Updating the app" has
+the workflow; the release must be tagged `v<version>` with the setup exe attached, or installed builds
+cannot see it.
+
+Update downloads now have a timeout, reject concurrent requests, validate the repository URL and
+positive asset size, and verify GitHub's SHA-256 digest when supplied (including cached installers).
+Setup revalidates the file against the current release before launching. The UI retains launch
+errors and shows successful launch state; prerelease tags are not treated as stable updates.
+
+
 ## 1.0.0 — 2026-11-03 — first desktop build
 
 Vendored from the Lab Planner & ELN web app at `612dbc5` (`UPSTREAM.md`). This is a Windows app:

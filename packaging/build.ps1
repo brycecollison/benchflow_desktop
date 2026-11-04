@@ -42,7 +42,9 @@ if ($Seed) {
 
 Write-Host "`n=== the UI ===" -ForegroundColor Cyan
 npm --prefix frontend ci
+if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
 npm --prefix frontend run build
+if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }
 
 Write-Host "`n=== the exe (onedir) ===" -ForegroundColor Cyan
 & $py -m PyInstaller packaging/benchflow.spec --noconfirm
@@ -85,3 +87,6 @@ if (-not $SkipInstaller) {
 }
 
 Write-Host "`nBuilt version $version." -ForegroundColor Green
+# The in-app update check compares a release tag against APP_VERSION and downloads the asset whose
+# name it builds from that tag, so a release without both is invisible to every installed build.
+Write-Host "to release: tag this commit v$version, and attach dist\installer\Benchflow-$version-Setup.exe to that release"

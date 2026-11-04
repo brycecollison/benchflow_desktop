@@ -6,7 +6,7 @@ someone else can repeat it. Nothing here depends on trusting the developer.
 How to run the named tests:
 
 ```powershell
-venv\Scripts\python.exe -m pytest backend/tests -q        # 47 checks, no network, no real notebook
+venv\Scripts\python.exe -m pytest backend/tests -q        # offline checks, no real notebook
 venv\Scripts\python.exe packaging\test_frozen.py          # drives the real Benchflow.exe
 ```
 

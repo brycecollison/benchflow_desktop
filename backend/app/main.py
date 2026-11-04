@@ -20,6 +20,7 @@ from app.image_processor import process_uploaded_file
 from app.database import init_db, get_session, engine, DB_PATH
 from app.paths import BASE_DIR, DATA_DIR, FRONTEND_DIST, UPLOAD_DIR, STATE_FILE
 from app import seed as seeding
+from app import update as updater
 from app.models import ExperimentDB, ProjectDB, PaperDB
 from app.db_service import (
     init_data_if_empty,
@@ -453,11 +454,18 @@ def _backup_dest_or_400(raw: str) -> Path:
 
 
 def backup_run(session: Session) -> Dict[str, Any]:
-    """Snapshot db + referenced attachments into the configured folder; record the summary."""
-    from app.backup import run_backup
+    """Snapshot db + referenced attachments into the configured folder; record the summary.
+
+    publish, not run_backup: the folder also carries the other computer's notebook, so a push that
+    would land on top of a notebook published since this window opened is refused (app/backup.py).
+    """
+    from app.backup import publish
 
     dest = _backup_dest_or_400(get_setting(session, "backup_dir") or "")
-    summary = run_backup(DB_PATH, UPLOAD_DIR, dest)
+    try:
+        summary = publish(DB_PATH, UPLOAD_DIR, dest)
+    except (OSError, ValueError, RuntimeError) as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     set_setting(session, "backup_last", json.dumps(summary))
     return summary
 
@@ -469,6 +477,9 @@ def shutdown_backup() -> None:
             if not get_setting(session, "backup_dir"):
                 return
             s = backup_run(session)
+            if s.get("action") == "conflict":
+                print(f"[backup] NOT PUBLISHED - {s.get('detail')}")
+                return
             print(
                 f"[backup] db {s['db_bytes'] / 1024:.0f} KB, {s['copied']} new attachments "
                 f"-> {s['dest']} ({s['unreferenced_count']} unreferenced files not copied)"
@@ -501,8 +512,11 @@ def _backup_loop(stop: threading.Event) -> None:
         try:
             summary = backup_tick()
             if summary:
-                print(f"[backup] scheduled -> {summary.get('dest')} "
-                      f"({summary.get('copied', 0)} new attachments)", flush=True)
+                if summary.get("action") == "conflict":
+                    print(f"[backup] NOT PUBLISHED - {summary.get('detail')}", flush=True)
+                else:
+                    print(f"[backup] scheduled -> {summary.get('dest')} "
+                          f"({summary.get('copied', 0)} new attachments)", flush=True)
         except Exception as e:  # a bad folder, a drive that went away: the app must keep working
             print(f"[WARN] scheduled backup failed: {e}", flush=True)
 
@@ -519,12 +533,17 @@ def start_backup_scheduler() -> tuple[threading.Event, threading.Thread]:
 def get_backup_config(session: Session = Depends(get_session)):
     d = get_setting(session, "backup_dir")
     last = get_setting(session, "backup_last")
+    from app.backup import read_sync_state
+
     return {
         "dir": d,
         "configured": bool(d),
         "folder_exists": bool(d) and Path(d).is_dir(),
         "in_onedrive": bool(d) and _in_onedrive(Path(d)),
         "last_backup": json.loads(last) if last else None,
+        # what this machine's notebook and the folder's were last matched at, on this machine
+        # (benchflow-sync.json next to the db). `conflict` means a copy was kept instead.
+        "sync": read_sync_state(DB_PATH) or None,
     }
 
 
@@ -547,6 +566,36 @@ def backup_now(session: Session = Depends(get_session)):
     if not get_setting(session, "backup_dir"):
         raise HTTPException(status_code=400, detail="Configure the OneDrive backup folder in Settings first")
     return backup_run(session)
+
+
+# -- Updates (installed builds only; app/update.py says why) --------------------------------
+# Three calls, no background worker of its own: the download runs in this server's threadpool and
+# reports into app.update.DOWNLOAD, which the UI reads from GET /api/update while the POST is in
+# flight. Nothing here can break the notebook - the worst case is a message in the Settings card.
+
+@app.get("/api/update")
+def get_update(force: bool = False):
+    """Newest release vs this build, plus installer progress. Never raises: an offline lab laptop
+    gets error/reason text instead."""
+    return updater.check(force=force)
+
+
+@app.post("/api/update/download")
+def post_update_download():
+    try:
+        return updater.download_latest()
+    except Exception as e:  # noqa: BLE001 - the card shows the reason
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/api/update/install")
+def post_update_install():
+    """Start Setup. It closes this window (setup.iss CloseApplications=yes), which publishes the
+    notebook, and then replaces the files."""
+    try:
+        return updater.launch_installer()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/lab/upload", response_model=UploadResponse)

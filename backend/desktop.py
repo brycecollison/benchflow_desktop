@@ -64,8 +64,9 @@ MODES = f"""modes:
                       app's backend/ folder (data/ + uploads/) or any folder containing them.
                       Refuses to overwrite an existing notebook: pass --force to replace it
                       (the replaced notebook is kept as benchflow-replaced-<timestamp>.db).
-  --backup            snapshot the notebook to the backup folder configured in Settings, the
-                      same way the Settings button and the closing app do.
+  --backup            match the backup folder configured in Settings and publish this notebook
+                      into it, the same way the closing app does. Exits 1 if the folder holds a
+                      notebook this machine has not matched - a full sync needs the window closed.
   --restore [DIR]     copy a snapshot back into {APP_DATA_DIR} and exit. DIR defaults to the
                       configured backup folder. Restores what a backup took: benchflow.db plus
                       the referenced attachments under uploads/. Refuses to overwrite an
@@ -365,6 +366,7 @@ def run_window(args: argparse.Namespace) -> int:
         """Runs once the GUI loop is up, before the notebook is opened: the first-run import
         has to happen before the app creates its default notebook in the data folder."""
         try:
+            startup_sync()  # before the app seeds a default notebook into an empty data folder
             first_run_import(window)
             state["server"], state["thread"] = start_server(port)
             if not wait_for_server(port):
@@ -416,6 +418,38 @@ def shutdown(server, thread, lock_handle) -> int:
         os.close(lock_handle)
     release_instance_lock()
     return 0
+
+
+def startup_sync() -> None:
+    """Take over the notebook the other computer published to the OneDrive folder, if it published
+    one since this machine last matched the folder.
+
+    Runs here and nowhere else, because it replaces benchflow.db and nothing may have it open - the
+    server is not up yet at this point. It is log-only: a collision keeps both copies and the
+    Settings view says so (GET /api/backup/config -> sync). Never lets a missing or half-synced
+    folder stop the app from opening.
+    """
+    from app.backup import configured_dest, sync_pull
+    from app.paths import DB_PATH, UPLOAD_DIR
+
+    log_path = logpaths.backend_log_path()
+    try:
+        dest = configured_dest(DB_PATH)
+        if not dest or not dest.is_dir():
+            return
+        summary = sync_pull(DB_PATH, UPLOAD_DIR, dest)
+    except Exception as e:  # noqa: BLE001 - the notebook opens even if the folder is unreachable
+        logpaths.append(log_path, f"[desktop] sync from the backup folder failed: {e}")
+        return
+    if summary["action"] in ("up-to-date", "nothing-to-pull"):
+        return
+    logpaths.append(
+        log_path,
+        f"[desktop] sync {summary['action']} from {dest}"
+        + (f"; the other copy is at {summary['kept']}" if summary.get("kept") else "")
+        + (f" - {summary['detail']}" if summary.get("detail") else "")
+        + (f"; {summary.get('copied', 0)} attachments added" if summary["action"] != "conflict" else ""),
+    )
 
 
 def first_run_import(window) -> None:
@@ -561,7 +595,15 @@ def run_import_mode(args: argparse.Namespace) -> int:
 def run_backup_mode() -> int:
     from app.backup import run_configured
 
-    return 0 if run_configured() is not None else 1
+    s = run_configured()
+    if s is None:
+        return 1
+    if s.get("action") in ("conflict", "nothing-to-publish"):
+        # A scheduled task learns about this from the exit code, and there is nothing in the task's
+        # stdout to read. Refusing is not a sync that happened.
+        print(s["detail"])
+        return 1
+    return 0
 
 
 def run_restore_mode(args: argparse.Namespace) -> int:

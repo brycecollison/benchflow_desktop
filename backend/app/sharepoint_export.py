@@ -40,7 +40,7 @@ from app.models import ExperimentDB
 
 SCHEMA_VERSION = 1
 # App version recorded in the manifest; keep in sync with the FastAPI title version.
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 # Headroom below SharePoint's hard 250 MB per-file sync limit.
 SIZE_LIMIT = 200 * 1024 * 1024
 # SharePoint file names: max 50 chars (extension separate, max 7). Keep margin.

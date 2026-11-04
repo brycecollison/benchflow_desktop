@@ -94,7 +94,7 @@ def test_a_scheduled_backup_lands_in_the_history_folder_of_the_configured_folder
         snapshots = sorted((backup / "history").glob("benchflow-*.db"))
         assert snapshots, f"nothing written under {backup / 'history'}"
         stamp = snapshots[0].name[len("benchflow-"):-len(".db")]
-        assert len(stamp) == len("20260729-091126") and stamp[8] == "-", snapshots[0].name
+        assert len(stamp) == len("20260729-091126-123456-1234abcd") and stamp[8] == "-", snapshots[0].name
         assert (backup / "benchflow.db").is_file()
         assert (backup / "uploads" / "micrograph-01.png").is_file(), \
             "an attachment the notebook references must be in the backup"

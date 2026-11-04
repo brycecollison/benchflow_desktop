@@ -43,7 +43,7 @@ server to log in to: whoever can open the window can read the notebook.
 | --- | --- |
 | *(no arguments)* | Open the window. The only mode that does. |
 | `--import DIR` | Copy an existing notebook into this install and exit. `DIR` is the web app's `backend` folder (`data\` + `uploads\`), or any folder containing `data\benchflow.db`. |
-| `--backup` | Snapshot the notebook and its referenced attachments into the backup folder set in Settings, then exit. |
+| `--backup` | Match the backup folder set in Settings and publish this notebook into it, then exit. Refuses with an error when the folder holds a notebook this machine has not matched - a full sync needs the window closed. |
 | `--restore [DIR]` | Copy a snapshot back into this install and exit. `DIR` defaults to the configured backup folder. Close the window first. |
 | `--mcp` | Serve the read-only notebook tools over stdio and exit: no window, no web server, nothing written. |
 | `--debug` | Open the window with WebView2 devtools attached. |
@@ -116,8 +116,10 @@ machines.
 
 ## Setting up the OneDrive backup folder
 
-A backup is a snapshot the app writes into a folder you choose; the live notebook stays on local
-disk. This is also how a notebook reaches a second machine.
+The folder is a two-way postbox, not just a dump: closing a window **publishes** this machine's
+notebook into it, and opening a window on any machine **takes** the notebook from it. The live
+notebook always stays on local disk - only the copy in the folder travels. Two machines working at
+the same time: the one closed later wins, and nothing is ever merged.
 
 ### Choose the folder
 
@@ -136,11 +138,15 @@ then syncs to the cloud. A folder inside the code folder is rejected.
 ### What the folder holds
 
 ```text
-<backup folder>/benchflow.db                          the latest snapshot
-<backup folder>/history/benchflow-YYYYMMDD-HHMMSS.db    the newest 14
+<backup folder>/benchflow.db                          the notebook the last machine published
+<backup folder>/history/benchflow-YYYYMMDD-HHMMSS.db    the newest 14 snapshots of it
 <backup folder>/uploads/...                            attachments your content points at
 <backup folder>/manifest.json                          last run: counts, sizes, unreferenced names
 ```
+
+Next to the live database (not in the folder) sits `benchflow-sync.json`: the fingerprint this
+machine last matched its notebook with the folder's, and the last pull result. It is what makes "did
+the other computer change this?" answerable.
 
 - Snapshots come from SQLite's online-backup API, so the sync client never sees a half-written
   database. Running a backup while the window is open is safe - it is a backup, not a file copy.
@@ -154,28 +160,48 @@ then syncs to the cloud. A folder inside the code folder is rejected.
 
 | When | |
 | --- | --- |
+| **Opening the window** | pulls first, before anything else opens the notebook |
 | **Save** in Settings, or **Back up now** | immediately |
 | Closing the window | every time, if a folder is set |
 | Window left open | every 8 hours |
 | `Benchflow.exe --backup` | on a schedule, e.g. `schtasks /Create /TN Benchflow-Backup /SC DAILY /ST 18:30 /TR "\"%LOCALAPPDATA%\Programs\Benchflow\Benchflow.exe\" --backup"` |
 
-The Settings card reports the folder state (found / not found, inside OneDrive or not) and the last
-run: database size, attachments copied, how many were new, snapshot count and timestamp.
+The Settings card reports the folder state (found / not found, inside OneDrive or not), the last
+run (database size, attachments copied, how many were new, snapshot count and timestamp) and the
+sync state: when this machine last matched the folder, and whether a pull was skipped for a
+conflict (with the file that was kept instead).
+
+A push is refused when the folder holds a notebook this machine has not matched - a window left open
+while the other machine published, or a machine that has never synced. Nothing is overwritten: that
+window's work still goes into `history/` and `uploads/`, and the card says to close and reopen the
+window, which either pulls or reports a conflict.
+
+Use **one computer at a time**, and wait for OneDrive to finish before switching. OneDrive is
+asynchronous: the guard sees only this machine's local copy, so it cannot prevent simultaneous
+writes from two offline computers. This is notebook handoff, not live collaboration.
 
 ### Getting the notebook onto another machine
 
-Back up on the first machine, let OneDrive finish syncing, then on the second machine close
-Benchflow and restore:
+Publish on the first machine (close its window), let OneDrive finish syncing, then on the second
+machine open **Settings → Personal OneDrive Backup**, point it at the same folder and save, and
+close and reopen the window. An empty notebook takes the folder's notebook. An existing notebook
+that has never synced is treated as a conflict, not silently replaced. On later pulls, the previous
+notebook is preserved as `%LOCALAPPDATA%\Benchflow\data\benchflow-replaced-<stamp>.db`.
+Missing remote attachments postpone a pull; different attachment contents under the same name
+stop the copy rather than overwrite either file.
+
+If **both** machines have typed since they last matched, neither overwrites the other: the folder's
+notebook is copied to `data\benchflow-conflict-<stamp>.db` (with its attachments), the card says so,
+and you decide - publish from one machine, or restore the kept copy by hand:
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Benchflow\Benchflow.exe" --restore "C:\Users\you\OneDrive\BenchflowBackup"
 & "$env:LOCALAPPDATA\Programs\Benchflow\Benchflow.exe" --restore    # the folder already set in Settings
 ```
 
-A brand new install has no notebook yet, so it has no configured folder to read - give it the path.
-A restore refuses when the existing notebook holds records, and changes nothing when it does; move
-`%LOCALAPPDATA%\Benchflow\data\benchflow.db` aside by hand and run it again. A restore brings back
-the database and the uploads the notebook references.
+`--restore` stays the manual route: it needs an empty live notebook (it refuses otherwise and changes
+nothing), and it brings back the database plus the uploads the notebook references. A brand new
+install has no notebook yet, so it has no configured folder to read - give it the path.
 
 ### Keep the live data and the code out of OneDrive
 
@@ -189,6 +215,32 @@ Only the backup folder belongs in the synced tree:
   The app logs a warning when it starts in that state, and rejects a backup destination inside the
   code folder. Clone the repo fresh on each machine instead of dragging the folder across.
 
+## Updating the app
+
+A new build arrives as `Benchflow-<version>-Setup.exe`. Installing it over an older one replaces the
+program only: the notebook, uploads, logs, settings and the backup folder setting all stay where
+they are, and the installer never goes near the OneDrive folder.
+
+An installed build asks GitHub for the newest release when a window opens - once per window, and not
+at all for a source checkout or the web app, which have no installer to run. When there is a newer
+one, a card appears in the corner of the window:
+
+1. **Download installer** puts it in `%LOCALAPPDATA%\Benchflow\updates\` and shows how far it got.
+   Nothing else changes, so it is safe to leave running while you keep working. About 65 MB: start
+   it while the network is good, and the card's *Later* leaves it for another time.
+2. **Run Setup** starts that installer and asks to close Benchflow. Let it close the window - that is
+   the step that saves this notebook to the sync folder. Accept Setup's own "close the applications"
+   prompt rather than killing the process: a killed Benchflow skips that save.
+3. Open Benchflow again. `Benchflow.exe --version` prints the build you are on, and
+   **Settings → Updates** says whether this install is up to date.
+
+Closed the card too early? **Settings → Updates** has the same buttons, and **Check now** asks GitHub
+again immediately instead of waiting for the next window.
+
+Two computers: update both before continuing to share a notebook. Current migrations add missing
+tables and selected experiment columns, but that is not a guarantee of compatibility with older
+builds. Read [CHANGELOG.md](CHANGELOG.md) for release-specific migration instructions.
+
 ## Where the app keeps its files
 
 | | Installed app | Development checkout |
@@ -198,6 +250,7 @@ Only the backup folder belongs in the synced tree:
 | Attachments | `%LOCALAPPDATA%\Benchflow\uploads\` | same |
 | Logs | `%LOCALAPPDATA%\Benchflow\logs\backend.log` (+ `.1`, `.2`) | same |
 | Instance lock, WebView2 profile | `%LOCALAPPDATA%\Benchflow\` | same |
+| Downloaded installer | `%LOCALAPPDATA%\Benchflow\updates\` | not used - a checkout has no installer to replace |
 | Code only | `%LOCALAPPDATA%\Programs\Benchflow` | the repo folder |
 
 - The journal runs in SQLite TRUNCATE mode, not WAL, so a cloud-synced `-wal` can never end up
@@ -341,7 +394,8 @@ Data-analysis pages: http://127.0.0.1:8000/docs is the interactive API documenta
 ### Checks
 
 ```powershell
-venv\Scripts\python.exe -m pytest backend\tests -q      # paths, seed, backup, scheduler, folder picker, CLI, safety, parity
+venv\Scripts\python.exe -m pytest backend\tests -q      # paths, seed, backup, sync, update, scheduler, folder picker
+venv\Scripts\python.exe backend\tests\test_parity_with_web.py   # this tree vs the web app it came from
 node frontend\scripts\start-dev-check.cjs              # launcher behaviour
 node frontend\scripts\backup-browse-check.cjs          # Settings backup card + picker
 node frontend\scripts\phases-check.ts                  # phase rules
@@ -374,6 +428,13 @@ installed), and a portable build at `dist\Benchflow-<version>-windows-portable.z
 `-SkipTest`, `-SkipInstaller`, `-Seed`.
 `docs/setup.md` has the full procedure, including where `APP_VERSION` lives and how the version is
 stamped into the exe and every backup manifest.
+
+To release what you built: bump `APP_VERSION`, commit, tag that commit `v<version>`, and publish the
+tag on GitHub with `dist\installer\Benchflow-<version>-Setup.exe` as an asset. That tag is what
+installed builds compare against, and the asset name is what they download, so both have to match
+`APP_VERSION` - the tag may start with `v`, the asset name may not, because the version in it has to
+be digits. A release with no matching asset is announced without an installer, and the app says
+so instead of failing. The portable zip can go next to it for anyone who does not want an installer.
 
 ## Troubleshooting
 
@@ -431,7 +492,7 @@ benchflow_desktop/
 │   │   ├── main.py         # FastAPI app; also serves the built UI
 │   │   ├── paths.py        # where this install keeps data, uploads, logs
 │   │   ├── seed.py         # first-run notebook import from a folder or the bundled seed
-│   │   ├── backup.py       # OneDrive snapshot + incremental mirror
+│   │   ├── backup.py       # OneDrive sync: publish/pull, snapshot, incremental mirror
 │   │   ├── notebook_queries.py   # read-only queries behind the API and MCP
 │   │   └── ...             # db_service, schemas, imaging, folder picker, dialogs
 │   ├── desktop.py          # the desktop entry point: window, import, backup/restore, --mcp
