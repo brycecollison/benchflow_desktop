@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { Project, Paper } from '../../types/lab';
 import { useLabStore } from '../../store/useLabStore';
-import { calculateLayout, wouldCreateCycle, NODE_WIDTH } from '../../utils/dag';
+import { calculateLayout, moveWithColumnCollapse, wouldCreateCycle, NODE_WIDTH } from '../../utils/dag';
 import { FlowNode } from './FlowNode';
 import { FlowEdge } from './FlowEdge';
 import { Magnet, Grid3x3, RotateCcw } from 'lucide-react';
@@ -21,7 +21,7 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = ({ project, papers }) => {
     openModal,
     addExperiment,
     updateExperiment,
-    updateNodePosition,
+    updateNodePositions,
     addDependency,
     removeDependency,
     showGrid,
@@ -272,7 +272,7 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = ({ project, papers }) => {
             onOpenModal={(id) => openModal(id)}
             onAddChild={handleAddChild}
             onUpdatePosition={(id, px, py) =>
-              updateNodePosition(project.id, id, px, py)
+              updateNodePositions(project.id, moveWithColumnCollapse(id, { x: px, y: py }, positions, nodeWidths))
             }
             onUpdateStatus={(newStatus) =>
               updateExperiment(project.id, exp.id, { status: newStatus })

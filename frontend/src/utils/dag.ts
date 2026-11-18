@@ -217,21 +217,24 @@ export function calculateLayout(
     });
   });
 
-  const positions: Record<string, NodePosition> = {};
+  const layerX: number[] = [];
   let currentLayerX = 20;
-
-  layers.forEach((layer) => {
-    let maxLayerWidth = MIN_NODE_WIDTH;
-    (layer || []).forEach((e, idxInLayer) => {
-      const w = nodeWidths[e.id] || MIN_NODE_WIDTH;
-      if (w > maxLayerWidth) maxLayerWidth = w;
-      positions[e.id] = {
-        x: (!ignoreCustomPositions && e.px != null) ? e.px : currentLayerX,
-        y: (!ignoreCustomPositions && e.py != null) ? e.py : idxInLayer * (NODE_HEIGHT + GAP_Y) + 20,
-      };
-    });
-    currentLayerX += maxLayerWidth + GAP_X;
+  layers.forEach((layer, i) => {
+    layerX[i] = currentLayerX;
+    currentLayerX += Math.max(MIN_NODE_WIDTH, ...(layer || []).map((e) => nodeWidths[e.id] || MIN_NODE_WIDTH)) + GAP_X;
   });
+
+  const rows = assignRows(visibleExperiments, memo);
+  const rowY = (row: number) => row * (NODE_HEIGHT + GAP_Y) + 20;
+  const autoPositions: Record<string, NodePosition> = {};
+  visibleExperiments.forEach((e) => {
+    autoPositions[e.id] = { x: layerX[memo[e.id]], y: rowY(rows[e.id]) };
+  });
+
+  const hasCustom = !ignoreCustomPositions && visibleExperiments.some((e) => e.px != null && e.py != null);
+  const positions: Record<string, NodePosition> = hasCustom
+    ? placeAroundCustom(visibleExperiments, memo, nodeWidths, autoPositions)
+    : autoPositions;
 
   let maxRightEdge = 0;
   let maxY = 0;
@@ -251,4 +254,133 @@ export function calculateLayout(
     height: maxY + NODE_HEIGHT + 60,
     visibleExperiments,
   };
+}
+
+/**
+ * Grid rows per experiment so a dependency chain stays on one horizontal line.
+ * A child reuses a parent's row when the straight run to it is free; otherwise it takes the
+ * nearest free row below. Cells crossed by a straight run are reserved so no tile sits on a line.
+ */
+function assignRows(exps: Experiment[], layerOf: Record<string, number>): Record<string, number> {
+  const ids = new Set(exps.map((e) => e.id));
+  const parentsOf = (e: Experiment) => [...new Set(e.deps)].filter((d) => ids.has(d));
+  const children = new Map<string, Experiment[]>();
+  exps.forEach((e) => parentsOf(e).forEach((d) => {
+    if (!children.has(d)) children.set(d, []);
+    children.get(d)!.push(e);
+  }));
+
+  const rowOf: Record<string, number> = {};
+  const taken = new Set<string>();
+  const free = (row: number, from: number, to: number) => {
+    for (let l = from; l <= to; l++) if (taken.has(`${l}:${row}`)) return false;
+    return true;
+  };
+  let nextRow = 0;
+
+  const place = (e: Experiment) => {
+    const layer = layerOf[e.id];
+    const parents = parentsOf(e).filter((d) => rowOf[d] != null).sort((a, b) => rowOf[a] - rowOf[b]);
+    let row: number | undefined;
+    let from = layer;
+    for (const p of parents) {
+      if (layerOf[p] < layer && free(rowOf[p], layerOf[p] + 1, layer)) {
+        row = rowOf[p];
+        from = layerOf[p] + 1;
+        break;
+      }
+    }
+    if (row == null) {
+      if (parents.length) {
+        from = Math.min(layer, ...parents.map((p) => layerOf[p] + 1));
+        row = rowOf[parents[0]];
+        while (!free(row, from, layer)) row++;
+      } else {
+        row = nextRow;
+      }
+    }
+    for (let l = from; l <= layer; l++) taken.add(`${l}:${row}`);
+    rowOf[e.id] = row;
+    nextRow = Math.max(nextRow, row + 1);
+    for (const child of children.get(e.id) || []) {
+      if (rowOf[child.id] == null && parentsOf(child).every((d) => rowOf[d] != null)) place(child);
+    }
+  };
+
+  exps.forEach((e) => { if (!parentsOf(e).length && rowOf[e.id] == null) place(e); });
+  // Anything left is part of a dependency cycle; give it its own row.
+  exps.forEach((e) => { if (rowOf[e.id] == null) place(e); });
+  return rowOf;
+}
+
+/**
+ * Keeps hand-placed tiles where they are and puts unplaced ones level with a parent when
+ * that spot is empty, otherwise at the nearest empty spot below.
+ */
+/**
+ * Positions to save when a tile is dragged: the tile itself, plus the tiles below it in its old
+ * column moved up into the space it left. Nothing else moves if it stayed in its own slot.
+ */
+export function moveWithColumnCollapse(
+  id: string,
+  to: NodePosition,
+  positions: Record<string, NodePosition>,
+  widths: Record<string, number>
+): Record<string, NodePosition> {
+  const moves: Record<string, NodePosition> = { [id]: to };
+  const from = positions[id];
+  if (!from) return moves;
+  const w = (n: string) => widths[n] || MIN_NODE_WIDTH;
+  const leftSlot = Math.abs(to.x - from.x) >= w(id) || Math.abs(to.y - from.y) >= NODE_HEIGHT;
+  if (!leftSlot) return moves;
+
+  const below = Object.entries(positions).filter(([other, p]) =>
+    other !== id && p.x < from.x + w(id) && from.x < p.x + w(other) && p.y >= from.y + NODE_HEIGHT
+  );
+  if (!below.length) return moves;
+  // Close exactly the slot that was left, never more than one tile's worth.
+  const shift = Math.min(Math.min(...below.map(([, p]) => p.y)) - from.y, NODE_HEIGHT + GAP_Y);
+  below.forEach(([other, p]) => { moves[other] = { x: p.x, y: p.y - shift }; });
+  return moves;
+}
+
+function placeAroundCustom(
+  exps: Experiment[],
+  layerOf: Record<string, number>,
+  widths: Record<string, number>,
+  auto: Record<string, NodePosition>
+): Record<string, NodePosition> {
+  const positions: Record<string, NodePosition> = {};
+  exps.forEach((e) => {
+    if (e.px != null && e.py != null) positions[e.id] = { x: e.px, y: e.py };
+  });
+  const overlaps = (id: string, p: NodePosition) => Object.entries(positions).some(([other, q]) =>
+    p.x < q.x + (widths[other] || MIN_NODE_WIDTH) + GAP_X / 2 &&
+    q.x < p.x + (widths[id] || MIN_NODE_WIDTH) + GAP_X / 2 &&
+    p.y < q.y + NODE_HEIGHT + GAP_Y &&
+    q.y < p.y + NODE_HEIGHT + GAP_Y
+  );
+
+  [...exps]
+    .filter((e) => !positions[e.id])
+    .sort((a, b) => layerOf[a.id] - layerOf[b.id])
+    .forEach((e) => {
+      const parents = e.deps.map((d) => ({ id: d, pos: positions[d] })).filter((p) => p.pos);
+      const x = parents.length
+        ? Math.max(...parents.map((p) => p.pos.x + (widths[p.id] || MIN_NODE_WIDTH))) + GAP_X
+        : auto[e.id].x;
+      const parentsAtAuto = parents.every((p) => p.pos.x === auto[p.id].x && p.pos.y === auto[p.id].y);
+      const candidates = [
+        ...(parentsAtAuto ? [auto[e.id]] : []),
+        ...parents.map((p) => ({ x, y: p.pos.y })),
+        parents.length ? { x, y: auto[e.id].y } : auto[e.id],
+      ];
+      let spot = candidates.find((c) => !overlaps(e.id, c));
+      if (!spot) {
+        spot = { ...candidates[0] };
+        while (overlaps(e.id, spot)) spot.y += NODE_HEIGHT + GAP_Y;
+      }
+      positions[e.id] = spot;
+    });
+  return positions;
 }

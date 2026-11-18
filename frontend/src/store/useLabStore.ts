@@ -13,6 +13,7 @@ import type {
   BuiltinWorkflowPhaseKey,
   CustomPhase,
   CalendarEventItem,
+  NodePosition,
 } from '../types/lab';
 import {
   WORKFLOW_PHASES,
@@ -138,11 +139,9 @@ interface LabStore extends LabState {
   ) => void;
   getCalendarEvents: () => CalendarEventItem[];
   deleteExperiment: (projectId: string, expId: string) => void;
-  updateNodePosition: (
+  updateNodePositions: (
     projectId: string,
-    expId: string,
-    px: number,
-    py: number
+    moves: Record<string, NodePosition>
   ) => void;
   addDependency: (
     projectId: string,
@@ -947,13 +946,13 @@ export const useLabStore = create<LabStore>((set, get) => ({
     get().saveState();
   },
 
-  updateNodePosition: (projectId, expId, px, py) => {
+  updateNodePositions: (projectId, moves) => {
     set((state) => ({
       projects: state.projects.map((p) => {
         if (p.id !== projectId) return p;
         return {
           ...p,
-          exps: p.exps.map((e) => (e.id === expId ? { ...e, px, py } : e)),
+          exps: p.exps.map((e) => (moves[e.id] ? { ...e, px: moves[e.id].x, py: moves[e.id].y } : e)),
         };
       }),
     }));

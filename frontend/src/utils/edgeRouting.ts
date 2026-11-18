@@ -119,13 +119,6 @@ function isPathObstructed(
   for (const obs of allNodes) {
     if (obs.id === sBox.id || obs.id === tBox.id) continue;
 
-    // Sibling nodes in the source column or target column do not block the open space between columns
-    const isSameColumnAsSource = Math.abs(obs.left - sBox.left) < 50;
-    const isSameColumnAsTarget = Math.abs(obs.left - tBox.left) < 50;
-    if (isSameColumnAsSource || isSameColumnAsTarget) {
-      continue;
-    }
-
     // Check if intermediate obstacle sits in the horizontal gap between the columns
     const xOverlap = Math.max(corridorLeft, obs.left) < Math.min(corridorRight, obs.right);
     const yOverlap = Math.max(corridorTop, obs.top) < Math.min(corridorBottom, obs.bottom);
@@ -218,176 +211,90 @@ export function calculateRoutedEdges(
     });
   });
 
-  // 2. Identify which edges need bypass routing around obstacles
+  const allNodesList = Object.values(nodeBoxes);
+  const CLEAR = 6;
+
+  // True when an axis-aligned segment stays clear of every tile except the edge's own two.
+  const segmentClear = (a: Point, b: Point, skip: EdgeInput) =>
+    !allNodesList.some(
+      (box) =>
+        box.id !== skip.source &&
+        box.id !== skip.target &&
+        Math.max(Math.min(a.x, b.x), box.left - CLEAR) <= Math.min(Math.max(a.x, b.x), box.right + CLEAR) &&
+        Math.max(Math.min(a.y, b.y), box.top - CLEAR) <= Math.min(Math.max(a.y, b.y), box.bottom + CLEAR)
+    );
+  const pathClear = (pts: Point[], edge: EdgeInput) =>
+    pts.every((pt, i) => i === 0 || segmentClear(pts[i - 1], pt, edge));
+
+  // Slide a vertical run at x sideways (dir +1 right, -1 left) until it clears every tile between y1 and y2.
+  const clearX = (x: number, y1: number, y2: number, dir: 1 | -1, edge: EdgeInput) => {
+    for (let i = 0; i < 50 && !segmentClear({ x, y: y1 }, { x, y: y2 }, edge); i++) {
+      const blocker = allNodesList.find(
+        (box) =>
+          box.id !== edge.source &&
+          box.id !== edge.target &&
+          x > box.left - CLEAR && x < box.right + CLEAR &&
+          Math.max(Math.min(y1, y2), box.top - CLEAR) < Math.min(Math.max(y1, y2), box.bottom + CLEAR)
+      );
+      if (!blocker) break;
+      x = dir > 0 ? blocker.right + 18 : blocker.left - 18;
+    }
+    return x;
+  };
+
+  // 2. Separate edges that can use a direct S-curve from those that must route around tiles
   interface PlannedBypass {
     edge: EdgeInput;
     sourcePoint: Point;
     targetPoint: Point;
-    direction: 'top' | 'bottom';
-    minObsTop: number;
-    maxObsBottom: number;
-    gutterY?: number;
-    entryX?: number;
-    exitX?: number;
-    isSourceLevelClear?: boolean;
+    exitOffset: number;
+    entryOffset: number;
   }
 
   const directEdges: { edge: EdgeInput; sourcePoint: Point; targetPoint: Point }[] = [];
   const bypassEdges: PlannedBypass[] = [];
 
-  const allNodesList = Object.values(nodeBoxes);
-
   for (const edge of edges) {
     const key = `${edge.source}->${edge.target}`;
     const sPoint = sourcePortMap.get(key);
     const tPoint = targetPortMap.get(key);
-    if (!sPoint || !tPoint) continue;
-
     const sBox = nodeBoxes[edge.source];
     const tBox = nodeBoxes[edge.target];
-    if (!sBox || !tBox) continue;
+    if (!sPoint || !tPoint || !sBox || !tBox) continue;
 
-    const isForward = tPoint.x > sPoint.x + 36;
-    const hasObstacle =
-      !isForward || isPathObstructed(sBox, tBox, sPoint, tPoint, allNodesList);
-
-    if (!hasObstacle && isForward) {
+    if (!isPathObstructed(sBox, tBox, sPoint, tPoint, allNodesList)) {
       directEdges.push({ edge, sourcePoint: sPoint, targetPoint: tPoint });
     } else {
-      // Find obstacle bounding box extents strictly in intermediate space between source and target
-      const xMin = Math.min(sPoint.x, tPoint.x);
-      const xMax = Math.max(sPoint.x, tPoint.x);
-      const relevantObstacles = allNodesList.filter(
-        (b) =>
-          b.id !== edge.source &&
-          b.id !== edge.target &&
-          Math.max(xMin, b.left) < Math.min(xMax, b.right)
-      );
-
-      const minObsTop = Math.min(
-        sBox.top,
-        tBox.top,
-        ...relevantObstacles.map((b) => b.top)
-      );
-      const maxObsBottom = Math.max(
-        sBox.bottom,
-        tBox.bottom,
-        ...relevantObstacles.map((b) => b.bottom)
-      );
-
-      // Check if the horizontal run at sourcePoint.y is forward and clear of intermediate obstacles
-      const isSourceYClear =
-        isForward &&
-        !relevantObstacles.some(
-          (obs) =>
-            sPoint.y >= obs.top - 8 &&
-            sPoint.y <= obs.bottom + 8
-        );
-
-      const avgY = (sPoint.y + tPoint.y) / 2;
-      const midObs = (minObsTop + maxObsBottom) / 2;
-      const direction: 'top' | 'bottom' =
-        minObsTop > 60 && avgY < midObs ? 'top' : 'bottom';
-
-      bypassEdges.push({
-        edge,
-        sourcePoint: sPoint,
-        targetPoint: tPoint,
-        direction,
-        minObsTop,
-        maxObsBottom,
-        isSourceLevelClear: isSourceYClear,
-      });
+      bypassEdges.push({ edge, sourcePoint: sPoint, targetPoint: tPoint, exitOffset: 18, entryOffset: 18 });
     }
   }
 
-  // 3. Assign horizontal gutter Y coordinates (lanes) for edges that need bypass
-  const bottomBypasses = bypassEdges.filter((b) => b.direction === 'bottom');
-  const topBypasses = bypassEdges.filter((b) => b.direction === 'top');
-
-  // For bottom bypasses:
-  // If the run at sourcePoint.y is clear, keep it at sourcePoint.y to avoid unnecessary vertical drop!
-  bottomBypasses.sort((a, b) => a.sourcePoint.y - b.sourcePoint.y);
-  bottomBypasses.forEach((item, laneIdx) => {
-    if (item.isSourceLevelClear) {
-      // Clear horizontally: run straight at sourcePoint.y, no vertical dip!
-      item.gutterY = item.sourcePoint.y;
-    } else {
-      // Blocked: route into bottom gutter
-      item.gutterY = item.maxObsBottom + 18 + laneIdx * 16;
-    }
+  // 3. Lane offsets so parallel vertical runs at one tile do not sit on top of each other.
+  // Entering from below, higher ports turn in further left; entering from above, the reverse.
+  const byTarget = new Map<string, PlannedBypass[]>();
+  const bySource = new Map<string, PlannedBypass[]>();
+  for (const b of bypassEdges) {
+    if (!byTarget.has(b.edge.target)) byTarget.set(b.edge.target, []);
+    byTarget.get(b.edge.target)!.push(b);
+    if (!bySource.has(b.edge.source)) bySource.set(b.edge.source, []);
+    bySource.get(b.edge.source)!.push(b);
+  }
+  byTarget.forEach((group) => {
+    const below = group.filter((b) => b.sourcePoint.y > b.targetPoint.y).sort((a, b) => a.targetPoint.y - b.targetPoint.y);
+    const above = group.filter((b) => b.sourcePoint.y <= b.targetPoint.y).sort((a, b) => a.targetPoint.y - b.targetPoint.y);
+    below.forEach((b, i) => { b.entryOffset = 18 + (below.length - 1 - i) * 14; });
+    above.forEach((b, i) => { b.entryOffset = 18 + i * 14; });
+  });
+  bySource.forEach((group) => {
+    group.sort((a, b) => a.targetPoint.y - b.targetPoint.y).forEach((b, i) => { b.exitOffset = 18 + i * 8; });
   });
 
-  // For top bypasses:
-  topBypasses.sort((a, b) => b.sourcePoint.y - a.sourcePoint.y);
-  topBypasses.forEach((item, laneIdx) => {
-    if (item.isSourceLevelClear) {
-      item.gutterY = item.sourcePoint.y;
-    } else {
-      item.gutterY = Math.max(12, item.minObsTop - 18 - laneIdx * 16);
-    }
-  });
-
-  // 4. Assign vertical entry X coordinates per target node for bypasses
-  // This guarantees that on vertical runs:
-  // - When approaching from below: middle connection stays to the LEFT of lower connection!
-  // - When approaching from above: upper connection stays to the RIGHT of lower connection!
-  const targetBypassGroups = new Map<string, PlannedBypass[]>();
-  bypassEdges.forEach((b) => {
-    if (!targetBypassGroups.has(b.edge.target)) {
-      targetBypassGroups.set(b.edge.target, []);
-    }
-    targetBypassGroups.get(b.edge.target)!.push(b);
-  });
-
-  targetBypassGroups.forEach((groupBypasses) => {
-    const fromBelow = groupBypasses.filter(
-      (b) => b.gutterY != null && b.gutterY > b.targetPoint.y
-    );
-    const fromAbove = groupBypasses.filter(
-      (b) => b.gutterY != null && b.gutterY <= b.targetPoint.y
-    );
-
-    // Coming from below: sort by targetPoint.y ascending (higher target port to lower target port)
-    // Higher target port (middle connection) gets SMALLER X (further left)
-    // Lower target port (lower connection) gets LARGER X (further right, closer to target)
-    fromBelow.sort((a, b) => a.targetPoint.y - b.targetPoint.y);
-    const countBelow = fromBelow.length;
-    fromBelow.forEach((b, idx) => {
-      const offsetLeft = 18 + (countBelow - 1 - idx) * 14;
-      b.entryX = b.targetPoint.x - offsetLeft;
-    });
-
-    // Coming from above: sort by targetPoint.y ascending (higher target port to lower target port)
-    // Higher port is reached first coming down, so it peels off at LARGER X (closer to target)
-    // Lower port continues down on the LEFT at SMALLER X
-    fromAbove.sort((a, b) => a.targetPoint.y - b.targetPoint.y);
-    fromAbove.forEach((b, idx) => {
-      const offsetLeft = 18 + idx * 14;
-      b.entryX = b.targetPoint.x - offsetLeft;
-    });
-  });
-
-  // 5. Assign exit X coordinates per source node for bypasses
-  const sourceBypassGroups = new Map<string, PlannedBypass[]>();
-  bypassEdges.forEach((b) => {
-    if (!sourceBypassGroups.has(b.edge.source)) {
-      sourceBypassGroups.set(b.edge.source, []);
-    }
-    sourceBypassGroups.get(b.edge.source)!.push(b);
-  });
-
-  sourceBypassGroups.forEach((groupBypasses) => {
-    groupBypasses.sort((a, b) => a.targetPoint.y - b.targetPoint.y);
-    groupBypasses.forEach((b, idx) => {
-      b.exitX = b.sourcePoint.x + 18 + idx * 8;
-    });
-  });
-
-  // 6. Build final path strings
+  // 4. Pick the simplest clear route: one bend near the target, one bend near the source,
+  // and only then a detour above or below everything in between.
   const routedResult: RoutedEdge[] = [];
+  const arrowFor = (t: Point) =>
+    `M ${t.x - 7} ${t.y - 4.5} L ${t.x} ${t.y} L ${t.x - 7} ${t.y + 4.5}`;
 
-  // Direct edges (Clean, graceful, horizontal S-curves)
   for (const item of directEdges) {
     const { edge, sourcePoint, targetPoint } = item;
     const dx = targetPoint.x - sourcePoint.x;
@@ -395,52 +302,51 @@ export function calculateRoutedEdges(
     const cp1x = sourcePoint.x + cpDist;
     const cp2x = targetPoint.x - cpDist;
 
-    const pathData = `M ${sourcePoint.x} ${sourcePoint.y} C ${cp1x.toFixed(1)} ${sourcePoint.y} ${cp2x.toFixed(1)} ${targetPoint.y} ${targetPoint.x} ${targetPoint.y}`;
-    const arrowData = `M ${targetPoint.x - 7} ${targetPoint.y - 4.5} L ${targetPoint.x} ${targetPoint.y} L ${targetPoint.x - 7} ${targetPoint.y + 4.5}`;
-
     routedResult.push({
       source: edge.source,
       target: edge.target,
-      pathData,
-      arrowData,
+      pathData: `M ${sourcePoint.x} ${sourcePoint.y} C ${cp1x.toFixed(1)} ${sourcePoint.y} ${cp2x.toFixed(1)} ${targetPoint.y} ${targetPoint.x} ${targetPoint.y}`,
+      arrowData: arrowFor(targetPoint),
       sourcePoint,
       targetPoint,
     });
   }
 
-  // Bypass edges (Obstacle avoidance with filleted corners)
+  let topLanes = 0;
+  let bottomLanes = 0;
   for (const item of bypassEdges) {
-    const { edge, sourcePoint, targetPoint } = item;
-    const gutterY = item.gutterY ?? sourcePoint.y;
-    const entryX = item.entryX ?? targetPoint.x - 18;
-    const isDirectLevel = Math.abs(gutterY - sourcePoint.y) < 2;
+    const { edge, sourcePoint: s, targetPoint: t } = item;
+    const oneBend = (x: number): Point[] => [s, { x, y: s.y }, { x, y: t.y }, t];
+    const entryX = clearX(t.x - item.entryOffset, s.y, t.y, -1, edge);
+    const exitX = clearX(s.x + item.exitOffset, s.y, t.y, 1, edge);
 
-    const waypoints: Point[] = isDirectLevel
-      ? [
-          sourcePoint,
-          { x: entryX, y: sourcePoint.y },
-          { x: entryX, y: targetPoint.y },
-          targetPoint,
-        ]
-      : [
-          sourcePoint,
-          { x: item.exitX ?? sourcePoint.x + 18, y: sourcePoint.y },
-          { x: item.exitX ?? sourcePoint.x + 18, y: gutterY },
-          { x: entryX, y: gutterY },
-          { x: entryX, y: targetPoint.y },
-          targetPoint,
-        ];
+    let waypoints: Point[] | undefined = [entryX, exitX]
+      .filter((x) => x > s.x + 8 && x < t.x - 8)
+      .map(oneBend)
+      .find((pts) => pathClear(pts, edge));
 
-    const pathData = createRoundedPath(waypoints, 14);
-    const arrowData = `M ${targetPoint.x - 7} ${targetPoint.y - 4.5} L ${targetPoint.x} ${targetPoint.y} L ${targetPoint.x - 7} ${targetPoint.y + 4.5}`;
+    if (!waypoints) {
+      // Detour through the gutter above or below every tile spanned by the edge.
+      const xMin = Math.min(s.x, t.x) - 60;
+      const xMax = Math.max(s.x, t.x) + 60;
+      const spanned = allNodesList.filter((b) => Math.max(xMin, b.left) < Math.min(xMax, b.right));
+      const top = Math.min(...spanned.map((b) => b.top));
+      const bottom = Math.max(...spanned.map((b) => b.bottom));
+      const avgY = (s.y + t.y) / 2;
+      const goTop = top - 18 - topLanes * 16 >= 2 && avgY - top < bottom - avgY;
+      const gutterY = goTop ? top - 18 - topLanes++ * 16 : bottom + 18 + bottomLanes++ * 16;
+      const outX = clearX(s.x + item.exitOffset, s.y, gutterY, 1, edge);
+      const inX = clearX(t.x - item.entryOffset, gutterY, t.y, -1, edge);
+      waypoints = [s, { x: outX, y: s.y }, { x: outX, y: gutterY }, { x: inX, y: gutterY }, { x: inX, y: t.y }, t];
+    }
 
     routedResult.push({
       source: edge.source,
       target: edge.target,
-      pathData,
-      arrowData,
-      sourcePoint,
-      targetPoint,
+      pathData: createRoundedPath(waypoints, 14),
+      arrowData: arrowFor(t),
+      sourcePoint: s,
+      targetPoint: t,
     });
   }
 
