@@ -15,6 +15,10 @@ imagecodecs>=2026.10.10
 # Re-run backend/test_mcp.py after any bump.
 mcp==2.3.0
 
+# The desktop window (backend/desktop.py). On Windows this pulls in pythonnet for the WebView2
+# backend. Without it the build still succeeds but the exe exits at launch; test_frozen.py catches that.
+pywebview>=6.2.1
+
 # Building the desktop app (packaging/benchflow.spec). Not needed to run the app.
 # Re-run packaging/test_frozen.py after any bump - binary plugins are what break.
 pyinstaller>=6.15.0
