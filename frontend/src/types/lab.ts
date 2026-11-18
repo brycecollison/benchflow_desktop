@@ -294,9 +294,7 @@ export function getExperimentPhases(exp: Experiment): WorkflowPhaseKey[] {
     if (raw === 'Analysis') return 'dataAnalysis';
     return raw;
   });
-  const builtins = ALL_WORKFLOW_PHASES.filter((pk) => normalized.includes(pk));
-  const customs = normalized.filter((pk) => !ALL_WORKFLOW_PHASES.includes(pk as BuiltinWorkflowPhaseKey));
-  return [...builtins, ...customs];
+  return [...new Set(normalized)];
 }
 
 export function checkAllPhasesScheduled(exp: Experiment): boolean {

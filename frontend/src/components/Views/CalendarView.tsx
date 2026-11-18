@@ -781,7 +781,7 @@ export const CalendarView: React.FC = () => {
             })
           }
           onDragEnd={handleDragEnd}
-          onClick={() => openModal(ev.experimentId)}
+          onClick={() => openModal(ev.experimentId, true, ev.phaseKey)}
           onDragOver={(e) => {
             if (activeDragItem && activeDragItem.type === 'move') {
               e.preventDefault();
@@ -982,7 +982,7 @@ export const CalendarView: React.FC = () => {
           })
         }
         onDragEnd={handleDragEnd}
-        onClick={() => openModal(ev.experimentId)}
+        onClick={() => openModal(ev.experimentId, true, ev.phaseKey)}
         onDragOver={(e) => {
           if (activeDragItem && activeDragItem.type === 'move') {
             e.preventDefault();
@@ -1855,7 +1855,7 @@ export const CalendarView: React.FC = () => {
                             })
                           }
                           onDragEnd={handleDragEnd}
-                          onClick={() => openModal(group.experimentId)}
+                          onClick={() => openModal(group.experimentId, true, ph.phaseKey)}
                           className={`flex items-center justify-between p-1.5 rounded-lg border text-xs cursor-grab active:cursor-grabbing hover:shadow-2xs transition-all select-none ${meta.colorTheme.bg} ${meta.colorTheme.border}`}
                         >
                           <div className="flex items-center gap-1.5 min-w-0">

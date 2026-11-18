@@ -40,6 +40,7 @@ interface LabStore extends LabState {
   filters: FilterState;
   activeModalExpId: string | null;
   isModalFullScreen: boolean;
+  activeModalPhaseKey: string | null;
   isDarkMode: boolean;
   isLoading: boolean;
   isSaving: boolean;
@@ -57,7 +58,7 @@ interface LabStore extends LabState {
   setFilterNot: (key: 'status' | 'paper' | 'priority', isNot: boolean) => void;
   clearFilter: (key: 'status' | 'paper' | 'priority') => void;
   resetFilters: () => void;
-  openModal: (expId: string, fullScreen?: boolean) => void;
+  openModal: (expId: string, fullScreen?: boolean, phaseKey?: string) => void;
   closeModal: () => void;
   toggleModalFullScreen: () => void;
   toggleDarkMode: () => void;
@@ -214,6 +215,7 @@ export const useLabStore = create<LabStore>((set, get) => ({
   filters: { ...DEFAULT_FILTERS },
   activeModalExpId: null,
   isModalFullScreen: false,
+  activeModalPhaseKey: null,
   isDarkMode:
     window.matchMedia &&
     window.matchMedia('(prefers-color-scheme: dark)').matches,
@@ -389,10 +391,10 @@ export const useLabStore = create<LabStore>((set, get) => ({
   resetFilters: () =>
     set({ filters: { ...DEFAULT_FILTERS } }),
 
-  openModal: (expId, fullScreen = false) =>
-    set({ activeModalExpId: expId, isModalFullScreen: fullScreen }),
+  openModal: (expId, fullScreen = false, phaseKey) =>
+    set({ activeModalExpId: expId, isModalFullScreen: fullScreen, activeModalPhaseKey: phaseKey ?? null }),
 
-  closeModal: () => set({ activeModalExpId: null, isModalFullScreen: false }),
+  closeModal: () => set({ activeModalExpId: null, isModalFullScreen: false, activeModalPhaseKey: null }),
 
   toggleModalFullScreen: () =>
     set((state) => ({ isModalFullScreen: !state.isModalFullScreen })),

@@ -240,7 +240,7 @@ export const ExperimentModal: React.FC = () => {
 };
 
 const FullscreenWorkspace: React.FC<{ experimentId: string }> = ({ experimentId }) => {
-  const { openModal, closeModal, toggleModalFullScreen, projects } = useLabStore();
+  const { openModal, closeModal, toggleModalFullScreen, projects, activeModalPhaseKey } = useLabStore();
   const [sidebarWidth, setSidebarWidth] = useState(256);
   const [splitView, setSplitView] = useState<{ experimentId: string | null } | null>(null);
   const secondaryId = splitView?.experimentId;
@@ -270,7 +270,7 @@ const FullscreenWorkspace: React.FC<{ experimentId: string }> = ({ experimentId 
       />
       <div className="min-w-0 flex-1 flex overflow-x-auto">
         <ExperimentEditor
-          experimentId={experimentId} fullScreen split={Boolean(splitView)} paneLabel="Primary experiment editor" onDeleted={closeModal}
+          experimentId={experimentId} fullScreen split={Boolean(splitView)} snapPhase={activeModalPhaseKey} paneLabel="Primary experiment editor" onDeleted={closeModal}
           headerActions={
             <>
               <button onClick={() => setSplitView(splitView ? null : { experimentId: null })} title="Splitscreen" aria-pressed={Boolean(splitView)} className="text-xs px-2.5 py-1.5"><Columns2 size={14} /><span>Splitscreen</span></button>
@@ -307,9 +307,10 @@ interface ExperimentEditorProps {
   onDeleted: () => void;
   paneLabel?: string;
   split?: boolean;
+  snapPhase?: string | null;
 }
 
-const ExperimentEditor: React.FC<ExperimentEditorProps> = ({ experimentId: activeModalExpId, fullScreen: isModalFullScreen, headerActions, onDeleted, paneLabel, split }) => {
+const ExperimentEditor: React.FC<ExperimentEditorProps> = ({ experimentId: activeModalExpId, fullScreen: isModalFullScreen, headerActions, onDeleted, paneLabel, split, snapPhase }) => {
   const {
     projects,
     papers,
@@ -328,6 +329,7 @@ const ExperimentEditor: React.FC<ExperimentEditorProps> = ({ experimentId: activ
   const [enlargedImage, setEnlargedImage] = useState<ImageBlock | null>(null);
   const [isLightboxZoomed, setIsLightboxZoomed] = useState(false);
   const [activeSectionTab, setActiveSectionTab] = useState<ActiveSectionTab>('all');
+  const [draggedPhase, setDraggedPhase] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   // Find project and experiment
@@ -356,6 +358,12 @@ const ExperimentEditor: React.FC<ExperimentEditorProps> = ({ experimentId: activ
   useEffect(() => {
     modalSurface.current?.scrollTo({ top: 0 });
   }, [activeModalExpId]);
+
+  // Runs after the scroll-to-top effect above so a phase click lands on its section.
+  useEffect(() => {
+    if (!isModalFullScreen || !snapPhase) return;
+    document.getElementById(`${paneId}-experiment-section-${snapPhase}`)?.scrollIntoView({ block: 'start' });
+  }, [activeModalExpId, snapPhase, isModalFullScreen, paneId]);
 
   useEffect(() => {
     if (!activeLightboxBlock) return;
@@ -478,6 +486,13 @@ const ExperimentEditor: React.FC<ExperimentEditorProps> = ({ experimentId: activ
       phases: getExperimentPhases(currentExp).filter((p) => p !== key),
     });
     if (activeSectionTab === key) setActiveSectionTab('all');
+  };
+
+  const handleReorderPhase = (from: string, to: string) => {
+    if (!currentProject || !currentExp || from === to) return;
+    const next = getExperimentPhases(currentExp).filter((p) => p !== from);
+    next.splice(next.indexOf(to), 0, from);
+    updateExperiment(currentProject.id, currentExp.id, { phases: next });
   };
 
   const handleSectionTextChange = (key: string, value: string) => {
@@ -639,6 +654,12 @@ const ExperimentEditor: React.FC<ExperimentEditorProps> = ({ experimentId: activ
               <button
                 key={sec.key}
                 type="button"
+                draggable={isModalFullScreen && Boolean(sec.hasWorkflowFields)}
+                onDragStart={() => setDraggedPhase(sec.key)}
+                onDragEnd={() => setDraggedPhase(null)}
+                onDragOver={(e) => { if (draggedPhase && sec.hasWorkflowFields) e.preventDefault(); }}
+                onDrop={(e) => { e.preventDefault(); if (draggedPhase && sec.hasWorkflowFields) handleReorderPhase(draggedPhase, sec.key); setDraggedPhase(null); }}
+                title={isModalFullScreen && sec.hasWorkflowFields ? 'Drag to reorder phases' : undefined}
                 onClick={() => { if (isModalFullScreen) document.getElementById(`${paneId}-experiment-section-${sec.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); else setActiveSectionTab(sec.key); }}
                 className={`px-2.5 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 whitespace-nowrap border cursor-pointer ${
                   isActive
