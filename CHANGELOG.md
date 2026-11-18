@@ -3,6 +3,46 @@
 Dates are the day the work was checked against a build, not the day it was written.
 The web app is the reference implementation — see `UPSTREAM.md` for which commit was vendored.
 
+## 1.0.2 — 2026-11-17 — calendar and flow chart cleanup
+
+No notebook or sync changes; installing over 1.0.1 keeps everything where it is.
+
+### Calendar
+
+- The page title is the date range, and every calendar control sits in the top bar beside it on
+  one row: Month/Week, previous/Today/next, a Phases dropdown, project, search. Phase filters are a
+  multi-select dropdown (include or exclude) in the top bar and in the backlog instead of a row of
+  toggle buttons.
+- The Unscheduled Workflows backlog is a full-height sidebar on the right, like the left nav. Each
+  sidebar has one collapse button; the top bar only shows an expand button while that side is
+  collapsed.
+- Week-view phase cards show the experiment name, its paper and project, then the phase, all left
+  aligned. Mark complete and Unschedule appear only while the pointer is over a card, on the name's
+  row, sized so the card does not grow.
+- Dragging a card's edge resizes it live, including while the pointer is over the card itself.
+- Clicking a phase card opens the full-screen editor scrolled to that phase.
+
+### Experiment editor
+
+- Phases can be reordered by dragging their tabs in the full-screen editor, and the order is kept.
+
+### Flow chart
+
+- Automatic layout keeps a chain of linked experiments on one row and starts branches on the next
+  free row; dependency lines take the simplest route that does not cross a tile, and only detour
+  above or below other tiles when there is no other way.
+- A new experiment linked from a hand-placed tile lands beside it at the same height when there is
+  room. Dragging a tile out of a column moves the tiles below it up into the gap.
+
+### Removed
+
+- The Gantt link in the sidebar.
+
+### How to check this release
+
+`node frontend/scripts/<name>.cjs` for every script in `frontend/scripts` (the browser ones need
+Playwright and Chrome), including the new `flow-layout-check.cjs` and `calendar-resize-check.cjs`.
+
 ## 1.0.1 — OneDrive sync and in-app updates
 
 ### The OneDrive folder is a sync folder, not an archive
