@@ -18,7 +18,6 @@ import {
   ArchiveRestore,
   FolderArchive,
   Ban,
-  PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
 import { ProjectPapersModal } from '../Modal/ProjectPapersModal';
@@ -159,7 +158,6 @@ export const Header: React.FC = () => {
 
   const getTitle = () => {
     if (view.type === 'all') return 'All projects';
-    if (view.type === 'calendar') return 'Calendar & Schedule';
     if (view.type === 'gantt') return 'Gantt Chart';
     if (view.type === 'pp') {
       return currentPaper ? currentPaper.name : 'Papers overview';
@@ -256,19 +254,17 @@ export const Header: React.FC = () => {
   return (
     <header className="relative z-40 px-4 py-2 border-b border-[var(--line)] flex items-center justify-between gap-3 flex-nowrap bg-[var(--card)]/50 backdrop-blur-xs select-none min-w-0">
       <div className="flex items-center gap-2 min-w-0 shrink-0">
-        {/* Left Sidebar Toggle Button */}
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          title={isSidebarOpen ? 'Collapse sidebar (Ctrl+B)' : 'Expand sidebar (Ctrl+B)'}
-          className={`p-1.5 rounded-lg border transition-all cursor-pointer shrink-0 flex items-center justify-center shadow-3xs ${
-            !isSidebarOpen
-              ? 'bg-[var(--sel)] text-[var(--acc)] border-[var(--acc)]/60 shadow-xs'
-              : 'border-[var(--line)] bg-[var(--card)] hover:bg-[var(--sel)] text-[var(--mut)] hover:text-[var(--ink)]'
-          }`}
-        >
-          {isSidebarOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
-        </button>
+        {/* Expand button only while the sidebar is collapsed; the open sidebar has its own collapse button */}
+        {!isSidebarOpen && (
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            title="Expand sidebar (Ctrl+B)"
+            className="p-1.5 rounded-lg border transition-all cursor-pointer shrink-0 flex items-center justify-center bg-[var(--sel)] text-[var(--acc)] border-[var(--acc)]/60 shadow-xs"
+          >
+            <PanelLeftOpen size={15} />
+          </button>
+        )}
 
         <div className="flex items-center gap-2 shrink-0">
           {currentPaper && (
@@ -277,7 +273,8 @@ export const Header: React.FC = () => {
               style={{ backgroundColor: currentPaper.color }}
             />
           )}
-          <h2 className="text-[16px] font-semibold tracking-tight m-0 truncate max-w-[150px] sm:max-w-[220px]">
+          {/* The calendar shows its date range as the title instead (rendered by CalendarView) */}
+          {view.type !== 'calendar' && <h2 className="text-[16px] font-semibold tracking-tight m-0 truncate max-w-[150px] sm:max-w-[220px]">
             {currentProject ? (
               <button
                 type="button"
@@ -289,7 +286,7 @@ export const Header: React.FC = () => {
                 {currentProject.name}
               </button>
             ) : getTitle()}
-          </h2>
+          </h2>}
           {currentProject?.archived && (
             <span className="px-2 py-0.5 rounded text-[11px] bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-medium flex items-center gap-1 shrink-0">
               <FolderArchive size={12} />
@@ -390,6 +387,9 @@ export const Header: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* CalendarView portals its controls in here */}
+      {view.type === 'calendar' && <div id="calendar-header-controls" className="flex-1 min-w-0 flex" />}
 
       <div className="flex items-center gap-1.5 shrink-0 flex-nowrap">
         {view.type !== 'calendar' && (

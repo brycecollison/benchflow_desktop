@@ -82,8 +82,27 @@ const { chromium } = require('playwright');
         });
         assert.deepEqual(row, { visible: true, sameRow: true }, `Hovered card ${i} shows actions right of the name on one row at ${width}px`);
       }
+      const toolbar = await page.locator('[data-calendar-toolbar]').evaluate((el) => {
+        const rects = [...el.querySelectorAll('button, select, input')].map((k) => k.getBoundingClientRect()).filter((r) => r.width > 0);
+        const box = el.getBoundingClientRect();
+        return {
+          rows: new Set(rects.map((r) => Math.round(r.top + r.height / 2))).size,
+          overflow: el.scrollWidth > el.clientWidth,
+          outside: rects.some((r) => r.left < box.left || r.right > box.right + 0.5),
+          overlaps: rects.some((a, i) => rects.some((b, j) => j > i && a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom && b.top < a.bottom)),
+        };
+      });
+      assert.deepEqual(toolbar, { rows: 1, overflow: false, outside: false, overlaps: false }, `Calendar toolbar fits one row at ${width}px`);
       console.log(`PASS: week cards at ${width}px with both sidebars open`);
     }
+    // Phase filter dropdown narrows the calendar to the chosen phase, and clearing it restores everything.
+    const cardLocator = page.locator('[draggable="true"][title*="Click to view experiment"]');
+    await page.locator('[data-calendar-toolbar]').getByTitle(/^Phases Filter/).click();
+    await page.getByText('Data Analysis', { exact: true }).last().click();
+    assert.equal(await cardLocator.count(), 1, 'Only the selected phase is shown');
+    await page.locator('[data-calendar-toolbar]').getByTitle('Clear this filter').click();
+    assert.equal(await cardLocator.count(), 3, 'Clearing the phase filter shows every phase');
+    console.log('PASS: phase filter dropdown');
   } finally {
     await browser?.close();
     server.kill();

@@ -46,7 +46,7 @@ const { chromium } = require('playwright');
     });
     await page.route('**/uploads/**', (route) => route.fulfill({ contentType: 'image/png', body: image }));
     await page.goto(url);
-    await page.getByRole('heading', { name: 'Calendar & Schedule', exact: true }).waitFor();
+    await page.locator('[data-calendar-toolbar]').waitFor();
     const open = async (id, full = false) => page.evaluate(async ({ id, full }) => (await import('/src/store/useLabStore.ts')).useLabStore.getState().openModal(id, full), { id, full });
     const experiment = async () => page.evaluate(async () => (await import('/src/store/useLabStore.ts')).useLabStore.getState().projects[0].exps[0]);
     await page.evaluate(async () => {
@@ -699,7 +699,7 @@ const { chromium } = require('playwright');
     assert.equal(await page.evaluate(async () => (await import('/src/store/useLabStore.ts')).useLabStore.getState().projects[0].exps[1].blocks.length), 0, 'Late uploads stay assigned to the original experiment');
     await (await savedLate).finished();
     assert(saved.projects[0].exps[0].blocks.some((block) => block.name === 'late.txt'), 'Late upload reaches the state API before reload');
-    await page.reload(); await page.getByRole('heading', { name: 'Calendar & Schedule', exact: true }).waitFor();
+    await page.reload(); await page.locator('[data-calendar-toolbar]').waitFor();
     await open('e1', true);
     await purpose.locator('strong').waitFor();
     assert.equal(await purpose.locator('mark').textContent(), 'Hypothesis', 'Highlight and bold survive saving and reopening');

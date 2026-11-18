@@ -40,8 +40,9 @@ const { chromium } = require('playwright');
     // All API traffic stays in memory, never touching real notebook data.
     await page.route('**/api/**', (route) => route.fulfill({ json: state }));
     await page.goto(url);
-    await page.getByRole('heading', { name: 'Calendar & Schedule', exact: true }).waitFor();
-    await page.getByRole('button', { name: 'Gantt', exact: true }).click();
+    await page.locator('[data-calendar-toolbar]').waitFor();
+    // The Gantt view has no sidebar link any more; open it the way the app's code would.
+    await page.evaluate(async () => (await import('/src/store/useLabStore.ts')).useLabStore.getState().setView({ type: 'gantt' }));
     const view = page.getByRole('region', { name: 'Gantt chart', exact: true });
     const chart = view.getByRole('region', { name: 'All projects', exact: true });
     await chart.getByText('3 scheduled phases', { exact: true }).waitFor();
@@ -127,7 +128,7 @@ const { chromium } = require('playwright');
         await fallback.addInitScript((data) => localStorage.setItem('lab', JSON.stringify(data)), savedState);
       }
       await fallback.goto(url);
-      await fallback.getByRole('heading', { name: 'Calendar & Schedule', exact: true }).waitFor();
+      await fallback.locator('[data-calendar-toolbar]').waitFor();
       assert.equal(await fallback.evaluate(async () => (await import('/src/store/useLabStore.ts')).useLabStore.getState().view.type), 'calendar', 'Calendar is the default with local or no saved data');
       await fallback.close();
     }

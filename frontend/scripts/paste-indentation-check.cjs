@@ -25,7 +25,7 @@ const { chromium } = require('playwright');
       return route.fulfill({ json: route.request().method() === 'POST' ? { status: 'success' } : saved });
     });
     await page.goto(url);
-    await page.getByRole('heading', { name: 'Calendar & Schedule', exact: true }).waitFor();
+    await page.locator('[data-calendar-toolbar]').waitFor();
     await page.evaluate(async () => (await import('/src/store/useLabStore.ts')).useLabStore.getState().openModal('e', true));
     const editor = page.getByRole('textbox', { name: 'Purpose editor', exact: true });
     await editor.waitFor();
@@ -91,7 +91,7 @@ WB for acSMC3, H3K27ac
     assert.equal(await editor.locator('strong').textContent(), 'Four spaces', 'Rich formatting survives reload');
     await page.waitForResponse((response) => response.url().includes('/api/') && response.request().method() === 'POST');
     await page.reload();
-    await page.getByRole('heading', { name: 'Calendar & Schedule', exact: true }).waitFor();
+    await page.locator('[data-calendar-toolbar]').waitFor();
     await page.evaluate(async () => (await import('/src/store/useLabStore.ts')).useLabStore.getState().openModal('e', true));
     await editor.waitFor();
     assert.deepEqual(await readLines(), lines, 'Pasted indentation survives saving and reopening the app');

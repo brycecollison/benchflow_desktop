@@ -65,6 +65,9 @@ export const App: React.FC = () => {
         </div>
       </main>
 
+      {/* Full-height right sidebar (the calendar's backlog portals itself in here) */}
+      <div id="right-sidebar-slot" className="flex h-full shrink-0" />
+
       {/* ELN Experiment Editor Modal */}
       <ExperimentModal />
 

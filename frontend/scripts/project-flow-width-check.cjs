@@ -31,7 +31,7 @@ const { chromium } = require('playwright');
     ] };
     await page.route('**/api/**', (route) => route.fulfill({ json: route.request().method() === 'POST' ? { status: 'success' } : state }));
     await page.goto(url);
-    await page.getByRole('heading', { name: 'Calendar & Schedule', exact: true }).waitFor();
+    await page.locator('[data-calendar-toolbar]').waitFor();
     await page.evaluate(async () => {
       const store = (await import('/src/store/useLabStore.ts')).useLabStore.getState();
       store.resetFilters();

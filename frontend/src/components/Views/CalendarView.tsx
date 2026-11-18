@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useLabStore } from '../../store/useLabStore';
+import { FilterDropdown } from '../Filters/FilterDropdown';
 import { getCalendarPhaseFilterKey } from '../../utils/calendarPhaseFilters';
 import { parseDurationDays } from '../../utils/schedule';
 import {
@@ -32,6 +34,12 @@ import {
 
 type CalendarViewMode = 'month' | 'week';
 
+// Same model as the project filters: empty = everything; otherwise include (or exclude, with isNot) the selected phases.
+type PhaseFilter = { values: string[]; isNot: boolean };
+const NO_PHASE_FILTER: PhaseFilter = { values: [], isNot: false };
+const phaseShown = (filter: PhaseFilter, key: string) =>
+  !filter.values.length || filter.values.includes(key) !== filter.isNot;
+
 interface DragPayload {
   type: 'move' | 'resize-left' | 'resize-right';
   projectId: string;
@@ -63,15 +71,22 @@ export const CalendarView: React.FC = () => {
   } = useLabStore();
 
   const [viewMode, setViewMode] = useState<CalendarViewMode>('week');
+  // Slots rendered by Header and App in the same commit, so look them up after mount.
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
+  const [rightSidebarSlot, setRightSidebarSlot] = useState<HTMLElement | null>(null);
+  React.useEffect(() => {
+    setHeaderSlot(document.getElementById('calendar-header-controls'));
+    setRightSidebarSlot(document.getElementById('right-sidebar-slot'));
+  }, []);
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
 
   // 1. Independent Calendar Filters: hidden phase keys (empty set = all phases shown)
-  const [hiddenCalPhases, setHiddenCalPhases] = useState<Set<WorkflowPhaseKey>>(new Set());
+  const [calPhases, setCalPhases] = useState<PhaseFilter>(NO_PHASE_FILTER);
   const [calProjectId, setCalProjectId] = useState<string>('all');
   const [calSearchQuery, setCalSearchQuery] = useState('');
 
   // 2. Independent Unscheduled Workflows Filters: hidden phase keys (empty set = all phases shown)
-  const [hiddenTrayPhases, setHiddenTrayPhases] = useState<Set<WorkflowPhaseKey>>(new Set());
+  const [trayPhases, setTrayPhases] = useState<PhaseFilter>(NO_PHASE_FILTER);
   const [trayProjectId, setTrayProjectId] = useState<string>('all');
   const [traySearchQuery, setTraySearchQuery] = useState('');
 
@@ -187,7 +202,6 @@ export const CalendarView: React.FC = () => {
   )).map((key) => key === 'customPhases'
     ? { ...getWorkflowPhaseMeta(key), label: 'Custom Phases', shortLabel: 'Custom Phases' }
     : phaseMetadata.get(key)!);
-  const availablePhaseKeys = phaseFilters.map((meta) => meta.key);
 
   // Compile scheduled events based on Calendar filters
   // Automatically spans phases whose duration > 1 day across corresponding days
@@ -199,7 +213,7 @@ export const CalendarView: React.FC = () => {
 
       for (const exp of proj.exps) {
         for (const phaseKey of getExperimentPhases(exp)) {
-          if (hiddenCalPhases.has(getCalendarPhaseFilterKey(phaseKey))) continue;
+          if (!phaseShown(calPhases, getCalendarPhaseFilterKey(phaseKey))) continue;
 
           const pData = getExperimentPhaseData(exp, phaseKey);
           const start = pData.startDate.trim();
@@ -236,7 +250,7 @@ export const CalendarView: React.FC = () => {
       }
     }
     return list;
-  }, [activeProjects, calProjectId, hiddenCalPhases, paperMap]);
+  }, [activeProjects, calProjectId, calPhases, paperMap]);
 
   // Filter calendar events by search query
   const filteredEvents = useMemo(() => {
@@ -312,7 +326,7 @@ export const CalendarView: React.FC = () => {
         }> = [];
 
         for (const phaseKey of getExperimentPhases(exp)) {
-          if (hiddenTrayPhases.has(getCalendarPhaseFilterKey(phaseKey))) continue;
+          if (!phaseShown(trayPhases, getCalendarPhaseFilterKey(phaseKey))) continue;
           const pData = getExperimentPhaseData(exp, phaseKey);
           const hasDate = Boolean(pData.startDate.trim());
           const isCompleted = pData.completed;
@@ -342,7 +356,7 @@ export const CalendarView: React.FC = () => {
     }
 
     return Array.from(groupMap.values());
-  }, [activeProjects, trayProjectId, hiddenTrayPhases, traySearchQuery, paperMap]);
+  }, [activeProjects, trayProjectId, trayPhases, traySearchQuery, paperMap]);
 
   // Total count of unscheduled phases in the tray
   const totalUnscheduledPhasesCount = useMemo(() => {
@@ -722,33 +736,19 @@ export const CalendarView: React.FC = () => {
     }
   }, [viewMode, currentDate, weekDays]);
 
-  const toggleCalPhase = (phase: WorkflowPhaseKey) => {
-    setHiddenCalPhases((prev) => {
-      const next = new Set(prev);
-      if (next.has(phase)) {
-        next.delete(phase);
-      } else {
-        if (next.size < availablePhaseKeys.length - 1) {
-          next.add(phase);
-        }
-      }
-      return next;
-    });
-  };
-
-  const toggleTrayPhase = (phase: WorkflowPhaseKey) => {
-    setHiddenTrayPhases((prev) => {
-      const next = new Set(prev);
-      if (next.has(phase)) {
-        next.delete(phase);
-      } else {
-        if (next.size < availablePhaseKeys.length - 1) {
-          next.add(phase);
-        }
-      }
-      return next;
-    });
-  };
+  const renderPhaseFilter = (filter: PhaseFilter, setFilter: React.Dispatch<React.SetStateAction<PhaseFilter>>) => (
+    <FilterDropdown
+      title="Phases"
+      align="right"
+      options={phaseFilters.map((meta) => ({ id: meta.key, label: meta.label }))}
+      selectedValues={filter.values}
+      isNot={filter.isNot}
+      onToggleValue={(id) => setFilter((f) => ({ ...f, values: f.values.includes(id) ? f.values.filter((v) => v !== id) : [...f.values, id] }))}
+      onSetValues={(values) => setFilter((f) => ({ ...f, values }))}
+      onToggleNot={() => setFilter((f) => ({ ...f, isNot: !f.isNot }))}
+      onClear={() => setFilter(NO_PHASE_FILTER)}
+    />
+  );
 
   const getPhaseIcon = (phaseKey: WorkflowPhaseKey) => {
     switch (phaseKey) {
@@ -766,12 +766,12 @@ export const CalendarView: React.FC = () => {
   const isTrayFiltered =
     trayProjectId !== 'all' ||
     traySearchQuery.trim() !== '' ||
-    hiddenTrayPhases.size > 0;
+    trayPhases.values.length > 0;
 
   const resetTrayFilters = () => {
     setTrayProjectId('all');
     setTraySearchQuery('');
-    setHiddenTrayPhases(new Set());
+    setTrayPhases(NO_PHASE_FILTER);
   };
 
   // Helper to render a continuous event card spanning one or more columns
@@ -1321,102 +1321,78 @@ export const CalendarView: React.FC = () => {
     <div className="flex-1 flex h-full overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
       {/* Main Calendar Section */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Calendar Top Bar with Dedicated Calendar Filters */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b border-[var(--line)] bg-[var(--card)]/80 backdrop-blur-xs select-none">
+        {/* Calendar controls live in the app header, right of the title */}
+        {headerSlot && createPortal(
+        <div data-calendar-toolbar className="flex flex-nowrap items-center justify-between gap-2 w-full min-w-0 select-none">
+          {/* Date range as the page title; the only part of the toolbar that gives up width when space runs out */}
+          <h2 className="text-[16px] font-semibold tracking-tight m-0 text-[var(--ink)] truncate min-w-0 shrink-[3]">
+            {headerDateLabel}
+          </h2>
+
           {/* Left: View Mode Toggle & Navigation */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center p-0.5 rounded-lg border border-[var(--line)] bg-[var(--bg)] shadow-2xs">
-              <button
-                type="button"
-                onClick={() => setViewMode('month')}
-                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all cursor-pointer ${
-                  viewMode === 'month'
-                    ? 'bg-[var(--card)] text-[var(--ink)] shadow-xs font-semibold'
-                    : 'text-[var(--mut)] hover:text-[var(--ink)]'
-                }`}
-              >
-                Month
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('week')}
-                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all cursor-pointer ${
-                  viewMode === 'week'
-                    ? 'bg-[var(--card)] text-[var(--ink)] shadow-xs font-semibold'
-                    : 'text-[var(--mut)] hover:text-[var(--ink)]'
-                }`}
-              >
-                Week
-              </button>
-            </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setViewMode('month')}
+              className={`!px-2.5 !py-1 text-xs font-medium rounded-md transition-all cursor-pointer ${
+                viewMode === 'month'
+                  ? 'bg-[var(--card)] text-[var(--ink)] shadow-xs font-semibold'
+                  : 'text-[var(--mut)] hover:text-[var(--ink)]'
+              }`}
+            >
+              Month
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('week')}
+              className={`!px-2.5 !py-1 text-xs font-medium rounded-md transition-all cursor-pointer ${
+                viewMode === 'week'
+                  ? 'bg-[var(--card)] text-[var(--ink)] shadow-xs font-semibold'
+                  : 'text-[var(--mut)] hover:text-[var(--ink)]'
+              }`}
+            >
+              Week
+            </button>
 
-            <div className="flex items-center gap-1 border border-[var(--line)] rounded-lg bg-[var(--bg)] p-0.5">
-              <button
-                type="button"
-                onClick={handlePrev}
-                title={viewMode === 'month' ? 'Previous Month' : 'Previous Week'}
-                className="p-1 rounded-md hover:bg-[var(--card)] text-[var(--mut)] hover:text-[var(--ink)] cursor-pointer"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={handleToday}
-                className="px-2 py-0.5 text-xs font-medium rounded-md hover:bg-[var(--card)] text-[var(--ink)] cursor-pointer"
-              >
-                Today
-              </button>
-              <button
-                type="button"
-                onClick={handleNext}
-                title={viewMode === 'month' ? 'Next Month' : 'Next Week'}
-                className="p-1 rounded-md hover:bg-[var(--card)] text-[var(--mut)] hover:text-[var(--ink)] cursor-pointer"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handlePrev}
+              title={viewMode === 'month' ? 'Previous Month' : 'Previous Week'}
+              className="!p-1 rounded-md hover:bg-[var(--card)] text-[var(--mut)] hover:text-[var(--ink)] cursor-pointer"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={handleToday}
+              className="!px-2 !py-0.5 text-xs font-medium rounded-md hover:bg-[var(--card)] text-[var(--ink)] cursor-pointer"
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={handleNext}
+              title={viewMode === 'month' ? 'Next Month' : 'Next Week'}
+              className="!p-1 rounded-md hover:bg-[var(--card)] text-[var(--mut)] hover:text-[var(--ink)] cursor-pointer"
+            >
+              <ChevronRight size={16} />
+            </button>
 
-            <div className="font-semibold text-sm tracking-tight text-[var(--ink)] ml-2">
-              {headerDateLabel}
-            </div>
           </div>
 
+
           {/* Right: Calendar Filters (Phase toggles, Project filter, Search, Backlog toggle) */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Calendar Phase Filters */}
-            <div
-              className="flex items-center gap-1 shrink-0"
-              title="Filter calendar by workflow phase"
-            >
-              {phaseFilters.map((meta) => {
-                const pk = meta.key;
-                const isSelected = !hiddenCalPhases.has(pk);
-                return (
-                  <button
-                    key={pk}
-                    type="button"
-                    onClick={() => toggleCalPhase(pk)}
-                    aria-pressed={isSelected}
-                    className={`px-2 py-1 text-[11px] rounded-md font-medium border flex items-center gap-1.5 transition-all cursor-pointer shrink-0 whitespace-nowrap ${
-                      isSelected
-                        ? `${meta.colorTheme.bg} ${meta.colorTheme.text} ${meta.colorTheme.border} shadow-2xs font-semibold`
-                        : 'border-[var(--line)] bg-[var(--bg)] text-[var(--mut)] opacity-60 hover:opacity-100 hover:bg-[var(--card)]'
-                    }`}
-                  >
-                    {getPhaseIcon(pk)}
-                    <span>{meta.shortLabel}</span>
-                  </button>
-                );
-              })}
-            </div>
+          <div className="flex items-center gap-1.5 min-w-0 ml-auto">
+            {/* Calendar Phase Filter */}
+            <div className="shrink-0">{renderPhaseFilter(calPhases, setCalPhases)}</div>
 
             {/* Calendar Project Filter */}
-            <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--line)] rounded-lg px-2 py-1 text-xs">
+            <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--line)] rounded-lg px-2 py-1 text-xs min-w-0">
               <Folder size={12} className="text-[var(--mut)]" />
               <select
                 value={calProjectId}
                 onChange={(e) => setCalProjectId(e.target.value)}
-                className="bg-transparent text-[11px] font-medium text-[var(--ink)] outline-hidden cursor-pointer border-none"
+                className="bg-transparent text-[11px] font-medium text-[var(--ink)] outline-hidden cursor-pointer border-none w-full min-w-0 max-w-32"
               >
                 <option value="all">All Projects ({activeProjects.length})</option>
                 {activeProjects.map((p) => (
@@ -1428,7 +1404,7 @@ export const CalendarView: React.FC = () => {
             </div>
 
             {/* Calendar Search Box */}
-            <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--line)] rounded-lg px-2 py-1 text-xs w-36 focus-within:w-44 transition-all">
+            <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--line)] rounded-lg px-2 py-1 text-xs w-36 min-w-12 focus-within:w-44 transition-all">
               <Search size={12} className="text-[var(--mut)] shrink-0" />
               <input
                 type="text"
@@ -1448,33 +1424,27 @@ export const CalendarView: React.FC = () => {
               )}
             </div>
 
-            {/* Toggle Unscheduled Drawer */}
-            <button
-              type="button"
-              onClick={toggleTrayOpen}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border font-medium transition-all cursor-pointer ${
-                isTrayOpen
-                  ? 'bg-[var(--sel)] border-[var(--line)] text-[var(--ink)]'
-                  : 'bg-[var(--bg)] border-[var(--line)] text-[var(--mut)] hover:text-[var(--ink)]'
-              }`}
-              title={
-                isTrayOpen ? 'Collapse Unscheduled Backlog' : 'Expand Unscheduled Backlog'
-              }
-            >
-              {isTrayOpen ? (
-                <PanelRightClose size={14} />
-              ) : (
+            {/* Expand button only while the backlog is collapsed; the open backlog has its own collapse button */}
+            {!isTrayOpen && (
+              <button
+                type="button"
+                onClick={toggleTrayOpen}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border font-medium transition-all cursor-pointer shrink-0 bg-[var(--bg)] border-[var(--line)] text-[var(--mut)] hover:text-[var(--ink)]"
+                title="Expand Unscheduled Backlog"
+              >
                 <PanelRightOpen size={14} />
-              )}
-              <span className="hidden sm:inline">Backlog</span>
-              {totalUnscheduledPhasesCount > 0 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[var(--acc)] text-white font-mono font-bold">
-                  {totalUnscheduledPhasesCount}
-                </span>
-              )}
-            </button>
+                <span className="hidden 2xl:inline">Backlog</span>
+                {totalUnscheduledPhasesCount > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[var(--acc)] text-white font-mono font-bold">
+                    {totalUnscheduledPhasesCount}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
-        </div>
+        </div>,
+        headerSlot
+        )}
 
         {/* Calendar Body Grid */}
         <div className="flex-1 flex flex-col min-h-0 overflow-auto p-3">
@@ -1683,8 +1653,8 @@ export const CalendarView: React.FC = () => {
         </div>
       </div>
 
-      {/* Unscheduled Backlog Drawer (Grouped by Experiment) */}
-      {isTrayOpen && (
+      {/* Unscheduled Backlog Drawer (Grouped by Experiment), full height beside the app like the left nav */}
+      {isTrayOpen && rightSidebarSlot && createPortal(
         <aside
           onDragOver={(e) => {
             e.preventDefault();
@@ -1763,30 +1733,8 @@ export const CalendarView: React.FC = () => {
 
           {/* Dedicated Filter Set for Unscheduled Workflows */}
           <div className="p-2.5 border-b border-[var(--line)] bg-[var(--bg)]/40 space-y-2">
-            {/* Phase Filter Buttons */}
-            <div className="flex items-center gap-1.5 w-full flex-wrap">
-              {phaseFilters.map((meta) => {
-                const pk = meta.key;
-                const isSelected = !hiddenTrayPhases.has(pk);
-                return (
-                  <button
-                    key={pk}
-                    type="button"
-                    onClick={() => toggleTrayPhase(pk)}
-                    aria-pressed={isSelected}
-                    title={`Filter unscheduled by ${meta.label}`}
-                    className={`flex-1 py-1.5 px-2 text-[11px] rounded-lg font-medium border flex items-center justify-center gap-1 transition-all cursor-pointer min-w-[70px] select-none ${
-                      isSelected
-                        ? `${meta.colorTheme.bg} ${meta.colorTheme.text} ${meta.colorTheme.border} font-semibold shadow-2xs`
-                        : 'border-[var(--line)] bg-[var(--card)] text-[var(--mut)] opacity-60 hover:opacity-100 hover:bg-[var(--bg)]'
-                    }`}
-                  >
-                    {getPhaseIcon(pk)}
-                    <span className="truncate">{meta.shortLabel}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {/* Phase Filter */}
+            {renderPhaseFilter(trayPhases, setTrayPhases)}
 
             {/* Project Filter for Tray */}
             <div className="flex items-center gap-1 bg-[var(--card)] border border-[var(--line)] rounded-md px-2 py-1 text-xs">
@@ -1913,7 +1861,8 @@ export const CalendarView: React.FC = () => {
               ))
             )}
           </div>
-        </aside>
+        </aside>,
+        rightSidebarSlot
       )}
     </div>
   );
