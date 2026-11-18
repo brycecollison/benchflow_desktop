@@ -1140,27 +1140,19 @@ export const CalendarView: React.FC = () => {
         {/* Top Header Row: Phase Type Badge & Action Buttons */}
         <div className="flex flex-wrap items-center justify-between gap-1.5 min-w-0 w-full">
           <div className="flex items-center gap-1.5 min-w-0 max-w-full">
-            {/* Visual Grip Indicator on hover - only for single-day reorderable cards */}
-            {!isMultiDay && (
-              <GripVertical
-                size={11}
-                className="text-[var(--mut)] opacity-0 group-hover:opacity-70 transition-opacity shrink-0 cursor-grab"
-              />
-            )}
-
             {!item.isStart && (
               <span className="text-[10px] font-bold text-[var(--mut)] shrink-0">
                 ‹
               </span>
             )}
 
-            {/* Phase Type Badge */}
+            {/* Experiment Name (truncated) */}
             <span
-              className={`inline-flex items-center gap-1.5 min-w-0 text-[10px] font-semibold px-2 py-0.5 rounded-md ${meta.colorTheme.badge} shadow-3xs`}
-              title={meta.label}
+              className={`font-semibold text-xs leading-snug truncate text-[var(--ink)] min-w-0 ${
+                ev.completed ? 'line-through opacity-60' : ''
+              }`}
             >
-              <span className="shrink-0">{getPhaseIcon(ev.phaseKey)}</span>
-              <span className="truncate">{item.spanCols === 1 ? meta.shortLabel : meta.label}</span>
+              {ev.experimentName}
             </span>
           </div>
 
@@ -1240,15 +1232,34 @@ export const CalendarView: React.FC = () => {
           </div>
         </div>
 
-        {/* Middle Section: Full Experiment Title (Wraps naturally, full width, no truncation) */}
-        <div className="w-full min-w-0 py-0.5">
+        {/* Paper name below experiment name */}
+        {ev.paperName && (
           <div
-            className={`font-semibold text-xs leading-snug [overflow-wrap:anywhere] whitespace-normal text-[var(--ink)] ${
-              ev.completed ? 'line-through opacity-60' : ''
-            }`}
+            className="w-full min-w-0 -mt-1 flex items-center gap-1 text-[10px] text-[var(--ink)]"
+            title={`Paper: ${ev.paperName}`}
           >
-            {ev.experimentName}
+            {ev.paperColor && (
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: ev.paperColor }} />
+            )}
+            <span className="truncate">{ev.paperName}</span>
           </div>
+        )}
+
+        {/* Project name */}
+        <div className="w-full min-w-0 truncate text-[10px] text-[var(--mut)] -mt-1" title={ev.projectName}>
+          {ev.projectName}
+        </div>
+
+        {/* Center: Phase name */}
+        <div className="w-full min-w-0 flex justify-start py-0.5">
+            {/* Phase Type Badge */}
+          <span
+            className={`inline-flex items-center gap-1.5 min-w-0 text-[10px] font-semibold px-2 py-0.5 rounded-md ${meta.colorTheme.badge} shadow-3xs`}
+            title={meta.label}
+          >
+            <span className="shrink-0">{getPhaseIcon(ev.phaseKey)}</span>
+            <span className="truncate">{item.spanCols === 1 ? meta.shortLabel : meta.label}</span>
+          </span>
         </div>
 
         {/* Bottom Footer Row: Duration, Paper Indicator & Date Range */}
@@ -1261,28 +1272,6 @@ export const CalendarView: React.FC = () => {
             <Clock size={10} className="text-[var(--mut)] shrink-0" />
             <span className="truncate">{totalDays > 1 ? `${totalDays} days` : (ev.duration || '1 day')}</span>
           </span>
-
-          {/* Paper Indicator Badge */}
-          {ev.paperColor && (
-            <span
-              className="inline-flex items-center gap-1 min-w-0 max-w-full text-[10px] font-medium px-1.5 py-0.5 rounded border"
-              style={{
-                borderColor: `${ev.paperColor}50`,
-                backgroundColor: `${ev.paperColor}15`,
-                color: 'var(--ink)',
-              }}
-              title={`Paper: ${ev.paperName || 'Paper'} (${ev.projectName})`}
-            >
-              <span
-                className="w-2 h-2 rounded-full shrink-0 shadow-3xs"
-                style={{ backgroundColor: ev.paperColor }}
-              />
-              <FileText size={10} className="shrink-0 text-[var(--mut)]" />
-              <span className="font-medium min-w-0 truncate max-w-[110px]">
-                {ev.paperName || 'Paper'}
-              </span>
-            </span>
-          )}
 
           {/* Date Range & Continuation Indicator */}
           <div className="ml-auto flex items-center gap-1 min-w-0 max-w-full text-[9px] font-mono text-[var(--mut)] opacity-80">
