@@ -12,7 +12,6 @@ import {
   FolderArchive,
   FlaskConical,
   Calendar,
-  ChartGantt,
   PanelLeftClose,
   Settings,
 } from 'lucide-react';
@@ -243,21 +242,6 @@ export const Sidebar: React.FC = () => {
             </span>
           )}
         </div>
-
-        {/* Gantt View link */}
-        <button
-          type="button"
-          onClick={() => setView({ type: 'gantt' })}
-          aria-current={view.type === 'gantt' ? 'page' : undefined}
-          className={`w-full !px-2 !py-1.5 !border-0 rounded-md cursor-pointer flex items-center !justify-start gap-2 text-left transition-colors ${
-            view.type === 'gantt'
-              ? '!bg-[var(--sel)] font-semibold'
-              : '!bg-transparent hover:!bg-black/5 dark:hover:!bg-white/5'
-          }`}
-        >
-          <ChartGantt size={15} className="text-[var(--mut)]" />
-          <span>Gantt</span>
-        </button>
 
         {/* Settings link */}
         <button
