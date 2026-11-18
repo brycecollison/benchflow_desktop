@@ -54,6 +54,7 @@ const { chromium } = require('playwright');
           if (card.scrollWidth > card.clientWidth + 1) errors.push('Card content overflows');
           for (const el of card.querySelectorAll('button, span[title]')) {
             const rect = el.getBoundingClientRect();
+            if (!rect.width) continue; // hidden until hover
             if (rect.left < bounds.left || rect.right > bounds.right) errors.push('Badge or action outside card');
           }
           const badge = card.querySelector('span[title]');
@@ -65,6 +66,22 @@ const { chromium } = require('playwright');
         return errors;
       });
       assert.deepEqual(failures, [], `Week cards at ${width}px with both sidebars open`);
+      const cards = page.locator('[draggable="true"][title*="Click to view experiment"]');
+      for (let i = 0; i < await cards.count(); i++) {
+        const card = cards.nth(i);
+        await page.mouse.move(0, 0);
+        assert.equal(await card.getByTitle('Unschedule phase').isVisible(), false, 'Actions hidden until hover');
+        const restingHeight = (await card.boundingBox()).height;
+        await card.hover();
+        assert.equal((await card.boundingBox()).height, restingHeight, `Hovered card ${i} does not grow at ${width}px`);
+        const row = await card.evaluate((el) => {
+          const name = el.querySelector('span.truncate').getBoundingClientRect();
+          const buttons = [...el.querySelectorAll('button')].map((b) => b.getBoundingClientRect());
+          const bounds = el.getBoundingClientRect();
+          return { visible: buttons.every((b) => b.width > 0), sameRow: buttons.every((b) => b.top < name.bottom && b.bottom > name.top && b.left >= name.right && b.right <= bounds.right) };
+        });
+        assert.deepEqual(row, { visible: true, sameRow: true }, `Hovered card ${i} shows actions right of the name on one row at ${width}px`);
+      }
       console.log(`PASS: week cards at ${width}px with both sidebars open`);
     }
   } finally {

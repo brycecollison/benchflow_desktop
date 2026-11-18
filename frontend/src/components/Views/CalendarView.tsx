@@ -27,7 +27,6 @@ import {
   Database,
   LineChart,
   RotateCcw,
-  FileText,
   Sparkles,
 } from 'lucide-react';
 
@@ -249,6 +248,30 @@ export const CalendarView: React.FC = () => {
         ev.projectName.toLowerCase().includes(q)
     );
   }, [allEvents, calSearchQuery]);
+
+  // Mouse events are suppressed during a native drag, so the first mousemove means it ended.
+  // Catches drags whose dragend was lost because the dragged handle unmounted mid-drag.
+  React.useEffect(() => {
+    if (!activeDragItem) return;
+    const end = () => { setActiveDragItem(null); setDragOverDate(null); setDragOverCard(null); setIsDragOverTray(false); };
+    window.addEventListener('mousemove', end, { once: true });
+    return () => window.removeEventListener('mousemove', end);
+  }, [activeDragItem]);
+
+  // While an edge is dragged, show the phase at the size it would get if dropped on the hovered day.
+  const isResizing = activeDragItem?.type === 'resize-left' || activeDragItem?.type === 'resize-right';
+  const displayedEvents = useMemo(() => {
+    if (!isResizing || !activeDragItem || !dragOverDate) return filteredEvents;
+    const resizingId = `${activeDragItem.experimentId}_${activeDragItem.phaseKey}`;
+    return filteredEvents.map((ev) => {
+      if (ev.id !== resizingId) return ev;
+      const end = ev.endDate || ev.startDate;
+      const [startDate, endDate] = activeDragItem.type === 'resize-left'
+        ? [dragOverDate <= end ? dragOverDate : ev.startDate, end]
+        : [ev.startDate, dragOverDate >= ev.startDate ? dragOverDate : end];
+      return { ...ev, startDate, endDate, duration: formatDurationDays(getDaysBetween(startDate, endDate)) };
+    });
+  }, [filteredEvents, isResizing, activeDragItem, dragOverDate]);
 
   // Group unscheduled phases by experiment
   // Criteria: remove completed phases and add all uncompleted phases, regardless of text or duration presence
@@ -674,8 +697,8 @@ export const CalendarView: React.FC = () => {
 
   // Week View Track Events (continuous spanning multi-day & single-day events)
   const weekTracks = useMemo(() => {
-    return computeWeekTracks(weekDays, filteredEvents, eventOrder);
-  }, [weekDays, filteredEvents, eventOrder]);
+    return computeWeekTracks(weekDays, displayedEvents, eventOrder);
+  }, [weekDays, displayedEvents, eventOrder]);
 
   // Header label
   const headerDateLabel = useMemo(() => {
@@ -766,7 +789,7 @@ export const CalendarView: React.FC = () => {
     if (viewMode === 'month') {
       return (
         <div
-          key={`${ev.id}_${item.startCol}_${item.spanCols}`}
+          key={ev.id}
           draggable
           onDragStart={(e) =>
             handleDragStart(e, {
@@ -866,7 +889,7 @@ export const CalendarView: React.FC = () => {
           } (${totalDays} day${totalDays > 1 ? 's' : ''})${
             !isMultiDay ? '\nDrag up or down to reorder cards' : '\nLocked to top slot'
           }\nClick to view experiment`}
-          className={`group relative h-[22px] min-h-[22px] py-0.5 px-1.5 rounded-md border text-left cursor-grab active:cursor-grabbing transition-all select-none flex items-center gap-1.5 shadow-3xs hover:shadow-xs hover:border-[var(--acc)] pointer-events-auto ${
+          className={`group relative h-[22px] min-h-[22px] py-0.5 px-1.5 rounded-md border text-left cursor-grab active:cursor-grabbing transition-all select-none flex items-center gap-1.5 shadow-3xs hover:shadow-xs hover:border-[var(--acc)] ${isResizing ? 'pointer-events-none' : 'pointer-events-auto'} ${
             meta.colorTheme.bg
           } ${meta.colorTheme.border} ${
             !item.isStart ? 'rounded-l-none border-l-0 border-dashed !ml-0' : 'ml-1'
@@ -967,7 +990,7 @@ export const CalendarView: React.FC = () => {
     // Rich Dynamic-Height Card for Week View with Drag-to-Reorder Support
     return (
       <div
-        key={`${ev.id}_${item.startCol}_${item.spanCols}`}
+        key={ev.id}
         draggable
         onDragStart={(e) =>
           handleDragStart(e, {
@@ -1067,7 +1090,7 @@ export const CalendarView: React.FC = () => {
         } (${totalDays} day${totalDays > 1 ? 's' : ''})${
           !isMultiDay ? '\nDrag up or down to reorder cards' : '\nLocked to top slots'
         }\nClick to view experiment`}
-        className={`group relative min-w-0 h-auto min-h-[62px] py-2 px-2.5 rounded-xl border text-left cursor-grab active:cursor-grabbing transition-all select-none flex flex-col justify-between gap-1.5 shadow-2xs hover:shadow-md hover:border-[var(--acc)] pointer-events-auto ${
+        className={`group relative min-w-0 h-auto min-h-[62px] py-2 px-2.5 rounded-xl border text-left cursor-grab active:cursor-grabbing transition-all select-none flex flex-col justify-between gap-1.5 shadow-2xs hover:shadow-md hover:border-[var(--acc)] ${isResizing ? 'pointer-events-none' : 'pointer-events-auto'} ${
           meta.colorTheme.bg
         } ${meta.colorTheme.border} ${
           !item.isStart ? 'rounded-l-none border-l-0 border-dashed !ml-0' : 'ml-1.5'
@@ -1137,9 +1160,9 @@ export const CalendarView: React.FC = () => {
           </div>
         )}
 
-        {/* Top Header Row: Phase Type Badge & Action Buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 min-w-0 w-full">
-          <div className="flex items-center gap-1.5 min-w-0 max-w-full">
+        {/* Top Header Row: Experiment Name & Action Buttons (single line, name truncates) */}
+        <div className="flex items-center gap-1 min-w-0 w-full">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
             {!item.isStart && (
               <span className="text-[10px] font-bold text-[var(--mut)] shrink-0">
                 ‹
@@ -1158,7 +1181,7 @@ export const CalendarView: React.FC = () => {
 
           {/* Action Buttons: Mark Complete (Check ✓) & Unschedule (✕) */}
           <div
-            className="flex items-center gap-1 shrink-0 ml-auto z-20"
+            className="flex items-center gap-0.5 min-w-0 ml-auto z-20"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Sequence Warning Icon */}
@@ -1168,6 +1191,8 @@ export const CalendarView: React.FC = () => {
               </span>
             )}
 
+            {/* Shown only while hovering (or tabbing into) the card; 14px buttons fit within the title's ~14.4px line height so the card doesn't grow */}
+            <span className="hidden group-hover:flex group-focus-within:flex items-center gap-0.5 min-w-0">
             {/* Mark Completed Button with distinct Check icon and emerald styling */}
             <button
               type="button"
@@ -1180,19 +1205,19 @@ export const CalendarView: React.FC = () => {
               title={ev.completed ? 'Mark Incomplete' : 'Mark Completed'}
               style={{
                 padding: 0,
-                width: 22,
-                height: 22,
-                minWidth: 22,
-                minHeight: 22,
+                width: 14,
+                height: 14,
+                minWidth: 14,
+                minHeight: 14,
               }}
-              className={`icon-btn flex items-center justify-center rounded-md transition-all shrink-0 cursor-pointer ${
+              className={`icon-btn flex items-center justify-center rounded-md transition-all cursor-pointer ${
                 ev.completed
                   ? '!bg-emerald-600 !border !border-emerald-600 text-white shadow-2xs font-bold'
                   : '!bg-emerald-500/20 hover:!bg-emerald-500/35 !border !border-emerald-500/50 hover:!border-emerald-500/80 text-emerald-600 dark:text-emerald-400'
               }`}
             >
               <Check
-                size={13}
+                size={10}
                 strokeWidth={ev.completed ? 3.2 : 2.8}
                 color={ev.completed ? '#ffffff' : '#10b981'}
                 className="shrink-0"
@@ -1215,20 +1240,21 @@ export const CalendarView: React.FC = () => {
               title="Unschedule phase"
               style={{
                 padding: 0,
-                width: 22,
-                height: 22,
-                minWidth: 22,
-                minHeight: 22,
+                width: 14,
+                height: 14,
+                minWidth: 14,
+                minHeight: 14,
               }}
-              className="icon-btn flex items-center justify-center rounded-md !bg-rose-500/20 hover:!bg-rose-500/35 !border !border-rose-500/50 hover:!border-rose-500/80 text-rose-600 dark:text-rose-400 transition-all shrink-0 cursor-pointer"
+              className="icon-btn flex items-center justify-center rounded-md !bg-rose-500/20 hover:!bg-rose-500/35 !border !border-rose-500/50 hover:!border-rose-500/80 text-rose-600 dark:text-rose-400 transition-all cursor-pointer"
             >
               <X
-                size={13}
+                size={10}
                 strokeWidth={2.8}
                 color="#ef4444"
                 className="shrink-0"
               />
             </button>
+            </span>
           </div>
         </div>
 
@@ -1469,7 +1495,7 @@ export const CalendarView: React.FC = () => {
                 {monthWeeks.map((week, weekIndex) => {
                   const weekTrackEvents = computeWeekTracks(
                     week,
-                    filteredEvents,
+                    displayedEvents,
                     eventOrder
                   );
 
@@ -1523,7 +1549,8 @@ export const CalendarView: React.FC = () => {
                               }
                             }}
                             onDragLeave={() => {
-                              if (dragOverDate === cell.dateStr) {
+                              // Keep the last hovered day while resizing so the preview doesn't flicker between cells.
+                              if (!isResizing && dragOverDate === cell.dateStr) {
                                 setDragOverDate(null);
                               }
                             }}
@@ -1617,7 +1644,8 @@ export const CalendarView: React.FC = () => {
                         }
                       }}
                       onDragLeave={() => {
-                        if (dragOverDate === col.dateStr) {
+                        // Keep the last hovered day while resizing so the preview doesn't flicker between cells.
+                        if (!isResizing && dragOverDate === col.dateStr) {
                           setDragOverDate(null);
                         }
                       }}
