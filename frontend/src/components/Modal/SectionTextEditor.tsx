@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ImagePreview } from './ImagePreviewExtension';
+import { ImagePreview, fixImageLinks } from './ImagePreviewExtension';
 import type { JSONContent } from '@tiptap/core';
 import { Fragment, Slice } from '@tiptap/pm/model';
 import { createPortal } from 'react-dom';
@@ -45,7 +45,7 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
       Markdown.configure({ markedOptions: { gfm: true, breaks: true } }),
       ...contentExtensions,
     ],
-    content: value,
+    content: fixImageLinks(value),
     contentType: 'markdown',
     editorProps: {
       transformPastedHTML: (html) => {
@@ -176,7 +176,7 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
 
   useEffect(() => {
     if (editor && value !== lastValue.current) {
-      editor.commands.setContent(value, { contentType: 'markdown', emitUpdate: false });
+      editor.commands.setContent(fixImageLinks(value), { contentType: 'markdown', emitUpdate: false });
       lastValue.current = value;
     }
   }, [editor, value]);

@@ -1,6 +1,14 @@
 import Image from '@tiptap/extension-image';
 
+/** Markdown only parses URLs with spaces/parens when wrapped in <>; also repairs notes saved unwrapped. */
+export const fixImageLinks = (markdown: string) =>
+  markdown.replace(/!\[([^\]\n]*)\]\((\/uploads\/[^"\n]*?)(\s+"[^"\n]*")\)/g, (_m, alt, src, title) => `![${alt}](<${src}>${title})`);
+
 export const ImagePreview = Image.extend({
+  renderMarkdown: (node) => {
+    const { src = '', alt = '', title } = node.attrs || {};
+    return `![${alt}](<${src}>${title ? ` "${title}"` : ''})`;
+  },
   addNodeView: () => ({ node, HTMLAttributes }) => {
     const dom = document.createElement('span');
     dom.className = 'section-image-preview';
