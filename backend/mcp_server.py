@@ -84,7 +84,7 @@ def search_experiments(
     Every whitespace-separated term must match (AND), case-insensitive and literal - SQL LIKE and glob wildcards are not interpreted.
     Ranking: experiment name hits first, then Experimental Protocol / Experimental Design / Results, then other sections, then number of occurrences.
     Content of phases removed from a record is not searched, so it cannot resurface as active evidence.
-    Sections to search: purpose, expectedResults, experimentalDesign, experimentalProtocol, dataAcquisition, dataAnalysis, results, notes, plus custom phase ids.
+    Sections to search: purpose, expectedResults, experimentalDesign, experimentalProtocol, dataAcquisition, dataAnalysis, results, figures, futureDirections, notes, plus custom phase ids.
     Archived projects are excluded unless include_archived=true. Paginated (limit max 50); next_offset and truncated say whether more results exist.
     Each hit carries the matched section, a snippet and a benchflow:// ref to cite.
     """
@@ -127,7 +127,7 @@ def experiment_resource(experiment_id: str) -> dict:
 @server.resource("benchflow://experiments/{experiment_id}/sections/{section_key}", name="experiment-section", title="Experiment section", description="One section of one experiment, with its attachment blocks", annotations=EVERYONE)
 def section_resource(experiment_id: str, section_key: str) -> dict:
     """Retrieval resource for a single section. Valid section keys: purpose, expectedResults, experimentalDesign,
-    experimentalProtocol, dataAcquisition, dataAnalysis, results, notes, plus the record's custom phase ids."""
+    experimentalProtocol, dataAcquisition, dataAnalysis, results, figures, futureDirections, notes, plus the record's custom phase ids."""
     return notebook_queries.get_section(db_path(), experiment_id, section_key)
 
 

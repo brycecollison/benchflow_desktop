@@ -26,6 +26,8 @@ STANDARD_SECTIONS = {
     "dataAcquisition": ("Data Acquisition", "data_acquisition"),
     "dataAnalysis": ("Data Analysis", "data_analysis"),
     "results": ("Results", "results"),
+    "figures": ("Figures", "figures"),
+    "futureDirections": ("Future Directions", "future_directions"),
     "notes": ("Notes", "notes"),
 }
 BUILTIN_PHASE_SECTIONS = ("experimentalProtocol", "dataAcquisition", "dataAnalysis")
@@ -41,6 +43,7 @@ SECTION_WEIGHTS = {
     "dataAcquisition": 3,
     "dataAnalysis": 3,
     "expectedResults": 2,
+    "futureDirections": 2,
     "notes": 2,
 }
 DEFAULT_SECTION_WEIGHT = 1

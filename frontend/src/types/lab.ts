@@ -3,7 +3,7 @@ export type PriorityLevel = 'High' | 'Med' | 'Low' | '';
 
 export type ExperimentSectionKey =
   | 'purpose' | 'expectedResults' | 'experimentalDesign'
-  | WorkflowPhaseKey | 'results' | 'notes';
+  | WorkflowPhaseKey | 'results' | 'figures' | 'futureDirections' | 'notes';
 
 interface SectionAttachment {
   section?: ExperimentSectionKey; // Legacy attachments without a section belong to Results.
@@ -69,6 +69,8 @@ export interface Experiment {
   dataAnalysisStartDate?: string;
   dataAnalysisEndDate?: string;
   results?: string;
+  figures?: string;
+  futureDirections?: string;
   notes?: string;
   blocks: ELNBlock[];
   /** Phases included in this experiment. Undefined/null = default phases (legacy experiments); empty = no phases. */

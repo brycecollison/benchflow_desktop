@@ -99,6 +99,8 @@ def get_lab_state(session: Session) -> LabState:
                     dataAnalysisEndDate=getattr(e, "data_analysis_end_date", "") or "",
                     results=getattr(e, "results", "") or "",
                     notes=e.notes or "",
+                    figures=getattr(e, "figures", "") or "",
+                    futureDirections=getattr(e, "future_directions", "") or "",
                     phases=normalize_phases(getattr(e, "phases", None)),
                     customPhases=getattr(e, "custom_phases", None),
                     blocks=e.blocks or [],
@@ -209,6 +211,8 @@ def save_lab_state(session: Session, state: LabState):
                 db_exp.data_analysis_end_date = exp.dataAnalysisEndDate or ""
                 db_exp.results = exp.results or ""
                 db_exp.notes = exp.notes or ""
+                db_exp.figures = exp.figures or ""
+                db_exp.future_directions = exp.futureDirections or ""
                 db_exp.phases = normalize_phases(exp.phases)
                 db_exp.custom_phases = custom_phases_dump
                 db_exp.blocks = blocks_dump
@@ -243,6 +247,8 @@ def save_lab_state(session: Session, state: LabState):
                     data_analysis_end_date=exp.dataAnalysisEndDate or "",
                     results=exp.results or "",
                     notes=exp.notes or "",
+                    figures=exp.figures or "",
+                    future_directions=exp.futureDirections or "",
                     phases=normalize_phases(exp.phases),
                     custom_phases=custom_phases_dump,
                     blocks=blocks_dump,

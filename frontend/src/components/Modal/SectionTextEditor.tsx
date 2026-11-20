@@ -11,11 +11,12 @@ import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Quote, Code,
 import { promptDialog, alertDialog } from '../../store/useDialogStore';
 import { InlineMath, BlockMath } from './MathExtension';
 import { FontSize, createFontSizeStarterKit, FONT_SIZES } from './FontSizeExtension';
-import { Highlight } from './HighlightExtension';
+import { PdfEmbed } from './PdfEmbedExtension';
+import { Highlight, HIGHLIGHT_COLORS, type HighlightColor } from './HighlightExtension';
 import { indentSelectedLines, sinkListItemAcrossMath } from '../../utils/editorIndentation';
 import './SectionTextEditor.css';
 
-const contentExtensions = [TableKit, FontSize, Highlight, InlineMath, BlockMath, ImagePreview.configure({ inline: true })];
+const contentExtensions = [TableKit, FontSize, Highlight, PdfEmbed, InlineMath, BlockMath, ImagePreview.configure({ inline: true })];
 const SectionStarterKit = createFontSizeStarterKit(contentExtensions);
 
 interface Props {
@@ -28,6 +29,9 @@ interface Props {
   onActivate: () => void;
   onEnlargeImage: (src: string, name: string) => void;
 }
+
+const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+const isEmbeddable = (file: File) => file.type.startsWith('image/') || isPdf(file);
 
 const containsMath = (node: JSONContent): boolean =>
   node.type === 'inlineMath' || node.type === 'blockMath' || (node.content?.some(containsMath) ?? false);
@@ -120,10 +124,10 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
       handlePaste: (_view, event) => {
         const clipboard = event.clipboardData;
         const images = Array.from(clipboard?.items || [])
-          .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+          .filter((item) => item.kind === 'file' && (item.type.startsWith('image/') || item.type === 'application/pdf'))
           .map((item) => item.getAsFile())
           .filter((file): file is File => file !== null);
-        const files = images.length ? images : Array.from(clipboard?.files || []).filter((file) => file.type.startsWith('image/'));
+        const files = images.length ? images : Array.from(clipboard?.files || []).filter(isEmbeddable);
         if (files.length) {
           event.preventDefault();
           void uploadImages(files);
@@ -140,7 +144,7 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
         return editor.commands.insertContent(content);
       },
       handleDrop: (view, event) => {
-        const files = Array.from(event.dataTransfer?.files || []).filter((file) => file.type.startsWith('image/'));
+        const files = Array.from(event.dataTransfer?.files || []).filter(isEmbeddable);
         if (!files.length) return false;
         event.preventDefault();
         const position = view.posAtCoords({ left: event.clientX, top: event.clientY });
@@ -165,7 +169,7 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
     editor,
     selector: ({ editor: current }) => current ? {
       bold: current.isActive('bold'), italic: current.isActive('italic'), underline: current.isActive('underline'),
-      highlight: current.isActive('highlight'), strike: current.isActive('strike'), bullet: current.isActive('bulletList'), ordered: current.isActive('orderedList'),
+      highlight: current.isActive('highlight'), highlightColor: current.getAttributes('highlight').color || '', strike: current.isActive('strike'), bullet: current.isActive('bulletList'), ordered: current.isActive('orderedList'),
       quote: current.isActive('blockquote'), code: current.isActive('codeBlock'), link: current.isActive('link'),
       heading: [1, 2, 3].find((level) => current.isActive('heading', { level })) || 0,
       fontSize: current.getAttributes('fontSize').size || '',
@@ -189,7 +193,9 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
     for (const file of files) {
       try {
         const src = await onUploadImage(file);
-        if (!editor.isDestroyed) editor.chain().focus().setImage({ src, alt: file.name, title: file.name }).run();
+        if (editor.isDestroyed) continue;
+        if (isPdf(file)) editor.chain().focus().insertContent({ type: 'pdfEmbed', attrs: { src, name: file.name } }).run();
+        else editor.chain().focus().setImage({ src, alt: file.name, title: file.name }).run();
       } catch (error) {
         setImageErrors((previous) => [...previous, `${file.name}: ${error instanceof Error ? error.message : 'Image upload failed'}`]);
       }
@@ -250,6 +256,17 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
       {FONT_SIZES.map((size) => <option key={size} value={size}>{size} px</option>)}
     </select>
   );
+  const renderHighlightColors = () => (
+    <span role="group" aria-label="Highlight color" className="inline-flex items-center gap-1 px-1">
+      {(Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((color) => (
+        <button key={color} type="button" aria-label={`Highlight ${color}`} title={`Highlight ${color}`} aria-pressed={state.highlightColor === color}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => state.highlightColor === color ? editor.chain().focus().unsetMark('highlight').run() : editor.chain().focus().setMark('highlight', { color }).run()}
+          style={{ backgroundColor: HIGHLIGHT_COLORS[color] }}
+          className={`!w-4 !h-4 !p-0 !rounded-full !border ${state.highlightColor === color ? '!border-[var(--ink)]' : '!border-transparent'}`} />
+      ))}
+    </span>
+  );
   const renderTool = (tool: (typeof tools)[number]) => (
     <button key={tool.label} type="button" aria-label={tool.label} title={tool.label} aria-pressed={tool.active} disabled={tool.disabled}
       onMouseDown={(event) => event.preventDefault()} onClick={tool.run}
@@ -273,12 +290,13 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
         </select>
         {renderFontSize()}
         {tools.map((tool) => renderTool(tool))}
-        <input ref={imageInput} type="file" accept="image/*" multiple className="hidden" aria-label={`Insert images into ${label}`} onChange={(event) => {
+        {renderHighlightColors()}
+        <input ref={imageInput} type="file" accept="image/*,application/pdf" multiple className="hidden" aria-label={`Insert images into ${label}`} onChange={(event) => {
           const files = Array.from(event.currentTarget.files || []);
           event.currentTarget.value = '';
           void uploadImages(files);
         }} />
-        <button type="button" aria-label="Insert image" title="Insert image" disabled={uploading} className="!p-1.5 !border-0 !bg-transparent" onMouseDown={(event) => event.preventDefault()} onClick={() => imageInput.current?.click()}><ImagePlus size={15} /></button>
+        <button type="button" aria-label="Insert image" title="Insert image or PDF" disabled={uploading} className="!p-1.5 !border-0 !bg-transparent" onMouseDown={(event) => event.preventDefault()} onClick={() => imageInput.current?.click()}><ImagePlus size={15} /></button>
         {state.table && (
           <>
             <button type="button" className="!text-xs !py-1" onClick={() => editor.chain().focus().addRowAfter().run()}>Add row</button>
@@ -296,6 +314,7 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
         className="z-50 flex flex-wrap items-center gap-1 max-w-[calc(100vw-16px)] p-1 rounded-md border border-[var(--line)] bg-[var(--bg)] shadow-lg">
         {renderFontSize()}
         {tools.filter((tool) => ['Bold', 'Italic', 'Underline', 'Strikethrough', 'Highlight', 'Link', 'Clear formatting'].includes(tool.label)).map(renderTool)}
+        {renderHighlightColors()}
       </BubbleMenu>}
       <EditorContent editor={editor} onClick={(event) => {
         const button = (event.target as Element).closest('[data-enlarge-image]');

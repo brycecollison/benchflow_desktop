@@ -400,14 +400,16 @@ export const Header: React.FC = () => {
           />
         )}
 
-        {view.type === 'all' && (
+        {(view.type === 'all' || view.type === 'p') && (
           <button
             type="button"
             title="Active"
             aria-pressed={isActiveFilter}
             onClick={() => {
               if (isActiveFilter) {
-                resetFilters();
+                // Project view also has paper chips; only drop the status filter there.
+                if (view.type === 'p') clearFilter('status');
+                else resetFilters();
               } else {
                 setFilterValues('status', ['Done']);
                 setFilterNot('status', true);

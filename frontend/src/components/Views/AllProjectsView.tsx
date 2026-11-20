@@ -82,6 +82,8 @@ export const AllProjectsView: React.FC = () => {
           (e.dataAcquisition && e.dataAcquisition.toLowerCase().includes(q)) ||
           (e.dataAnalysis && e.dataAnalysis.toLowerCase().includes(q)) ||
           (e.results && e.results.toLowerCase().includes(q)) ||
+          (e.figures && e.figures.toLowerCase().includes(q)) ||
+          (e.futureDirections && e.futureDirections.toLowerCase().includes(q)) ||
           (e.notes && e.notes.toLowerCase().includes(q))
       );
       const matchesPapers = projectPapers.some((p) =>
