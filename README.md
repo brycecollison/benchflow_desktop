@@ -49,11 +49,39 @@ server to log in to: whoever can open the window can read the notebook.
 | `--backup` | Match the backup folder set in Settings and publish this notebook into it, then exit. Refuses with an error when the folder holds a notebook this machine has not matched - a full sync needs the window closed. |
 | `--restore [DIR]` | Copy a snapshot back into this install and exit. `DIR` defaults to the configured backup folder. Close the window first. |
 | `--mcp` | Serve the read-only notebook tools over stdio and exit: no window, no web server, nothing written. |
+| `--install-android [--serial ID]` | Install the phone app on an Android phone plugged in over USB, then exit. See [Installing the phone app](#installing-the-phone-app). |
 | `--debug` | Open the window with WebView2 devtools attached. |
 | `--version` | Print the version and exit. |
 
 `--import` and `--restore` refuse to overwrite a notebook that holds records; `--force` replaces it
 and keeps what was there.
+
+## Installing the phone app
+
+The Android companion is installed over USB; there is no Play Store listing. It needs a phone with
+**USB debugging** on (Settings > About phone, tap *Build number* 7 times; then Settings > System >
+Developer options > *USB debugging*), a USB cable that carries data, and a tap on *Allow* at the
+phone's "Allow USB debugging?" prompt the first time.
+
+1. **From the app:** Settings > Phone sync > *Install the phone app*. Plug the phone in, wait for it
+   to say *ready*, press *Install on phone*. The first time, if this computer has no Android tools,
+   it offers to download Google's `adb` (about 7 MB, from `dl.google.com`) into
+   `%LOCALAPPDATA%\Benchflow\platform-tools`. An `adb` from the Android SDK or `PATH` is used if there is one.
+2. **From a terminal:** `Benchflow.exe --install-android` does the same (`--serial ID` picks one
+   phone when several are plugged in).
+3. **From a checkout:** `install-android.ps1` (`-Build` rebuilds the APK first).
+
+Then pair it: Settings > Phone sync > *Pair a phone*, and scan the QR code in the phone app's Sync tab.
+
+Updating is the same button; the app's data and pairing are kept. The APK is **debug-signed with the
+key of the computer that built it**. If the phone has the app from a build signed on another
+computer, Android refuses the in-place update and the installer says so: sync the phone, uninstall
+the app on it (anything not yet synced is lost), and install again.
+
+**Building the APK** (`mobileuild-apk.ps1`, run by `packaginguild.ps1` unless `-SkipAndroid`)
+needs Node, JDK 21 (`JAVA_HOME`) and the Android SDK (`ANDROID_HOME`, or the Android Studio default).
+It writes `buildndroidenchflow-companion.apk`, which the exe build bundles. A build without it
+says so in Settings instead of offering the install.
 
 ## Moving a notebook in from the web app
 
@@ -504,7 +532,8 @@ benchflow_desktop/
 │   ├── mcp_server.py       # read-only MCP server (dev checkout form)
 │   ├── run.py              # API-only development entry point
 │   └── tests/              # pytest suite
-├── mobile/                 # Android companion (Capacitor); spike results in SPIKE.md
+├── mobile/                 # Android companion (Capacitor); build-apk.ps1 builds the APK; spike results in SPIKE.md
+├── install-android.ps1     # build (-Build) and install the phone app over USB
 ├── docs/                   # setup.md, parity/security checklists, adr/
 ├── start-dev.ps1 / .sh     # Vite + API development launchers
 └── UPSTREAM.md             # which web-app commit this was copied from, and what differs
@@ -556,6 +585,17 @@ Phone sync over Tailscale (`docs/adr/0002-mobile-sync.md`), and the phone app it
   you changed, each with the version you started from, and the server merges them field by field.
   Changes made elsewhere show up in the open window within a few seconds.
 
+#### Installing the phone app
+
+- Settings > Phone sync installs the Android app on a phone plugged in over USB, with `adb` found on
+  this PC or downloaded once from Google. `Benchflow.exe --install-android`, `install-android.ps1`
+  and `mobileuild-apk.ps1` do the same from a terminal. The installer build bundles the APK.
+
+#### Development
+
+- The dev servers (`start-dev.ps1`, `start-dev.sh`) now run the phone sync server too. Before, only
+  the desktop window did, so pairing against a dev server through `tailscale serve` gave a 502.
+
 #### Calendar
 
 - Phase dates stored in the long form some imported notebooks use ("Tuesday, June 23, 2026") now
@@ -580,10 +620,13 @@ Phone sync over Tailscale (`docs/adr/0002-mobile-sync.md`), and the phone app it
 
 - Pair by scanning the QR code (or typing the address and code). The whole notebook is kept on the
   phone, so it works offline; edits queue and sync within seconds when the computer is reachable.
-- Agenda of today's, upcoming and past phases; search; open a phase or experiment and edit it with
-  the desktop's editor, set dates and completion, log deviations, insert the time, keep the screen
-  on, and add photos from the camera or gallery (downscaled to 2000 px).
+- Agenda of today's, upcoming and past phases, and search. Tapping a phase opens the whole
+  experiment scrolled to that phase, so the design and other phases are a scroll away. It uses the
+  desktop's editor; set dates and completion, log deviations, insert the time, keep the screen on,
+  and add photos from the camera or gallery (downscaled to 2000 px).
 - Attachments for this week's experiments are downloaded so they show offline.
+  Names with spaces, parentheses or `+` ("Rep 3 (Ponceau S).tif") are found too; the original
+  TIFFs are not downloaded, only the previews the notebook shows.
 - If the phone and the computer changed the same paragraph, the computer's text is kept and the
   phone's is set aside as a conflict, shown on both.
 

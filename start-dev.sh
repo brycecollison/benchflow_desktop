@@ -37,7 +37,7 @@ trap 'exit 143' TERM
 
 printf 'Backend:  http://127.0.0.1:8000\nFrontend: http://localhost:5173\nPress Ctrl+C to stop both. Restart this script after backend code changes.\n'
 # No reload supervisor: each PID is the actual server, including under Git Bash.
-(cd "$ROOT/backend" && exec "$PYTHON" -m uvicorn app.main:app --host 127.0.0.1 --port 8000) &
+(cd "$ROOT/backend" && BENCHFLOW_DEV_SYNC=1 exec "$PYTHON" -m uvicorn app.main:app --host 127.0.0.1 --port 8000) &
 pids+=("$!")
 (cd "$ROOT/frontend" && exec node node_modules/vite/bin/vite.js --host localhost --port 5173 --strictPort) &
 pids+=("$!")

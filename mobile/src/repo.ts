@@ -55,10 +55,27 @@ export async function uploadName(b64: string, filename: string): Promise<string>
   return `${hex.slice(0, 16)}_${original.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-120) || 'upload'}`;
 }
 
-/** /uploads/<name> files an experiment points at (text links, blocks, previews). */
+const MD_ANGLE = /\]\(<\/uploads\/([^>\n]+)>/g; // ![x](</uploads/name with spaces (1).png> "title")
+const MD_BARE = /\]\(\/uploads\/([^\s)]+)/g; // ![x](/uploads/name.png), percent-encoded
+
+/** /uploads/<name> files an experiment shows: block images and previews, and links in its text.
+ * Not raw_url: that is the original (a TIFF can be 15 MB), and nothing on the phone displays it. */
 export function attachmentRefs(exp: Experiment): string[] {
-  return [...new Set([...JSON.stringify(exp).matchAll(/\/uploads\/([^\s)"'\\\]?#]+)/g)].map((m) => decodeURIComponent(m[1])))];
+  const names = new Set<string>();
+  const up = (v: unknown) => typeof v === 'string' && v.startsWith('/uploads/') && names.add(v.slice(9));
+  for (const b of exp.blocks ?? []) { up((b as any).src); up((b as any).preview_url); }
+  const text = (v: unknown) => {
+    if (typeof v === 'string') {
+      for (const m of v.matchAll(MD_ANGLE)) names.add(m[1]);
+      for (const m of v.matchAll(MD_BARE)) names.add(decodeOr(m[1]));
+    } else if (Array.isArray(v)) v.forEach(text);
+    else if (v && typeof v === 'object') Object.values(v).forEach(text);
+  };
+  text({ ...exp, blocks: undefined });
+  return [...names];
 }
+
+const decodeOr = (s: string) => { try { return decodeURIComponent(s); } catch { return s; } };
 
 export class Repo {
   deviceId = '';

@@ -148,6 +148,24 @@ init_db()
 with Session(engine) as _startup_session:
     init_data_if_empty(_startup_session, STATE_FILE, DEFAULT_STATE)
 
+def _start_dev_sync_server():
+    """The dev servers (start-dev) set BENCHFLOW_DEV_SYNC so the phone's sync server runs in this
+    process, sharing the write lock; the desktop window starts its own (desktop.py)."""
+    if os.environ.get("BENCHFLOW_DEV_SYNC") != "1":
+        return None
+    import threading
+
+    import uvicorn
+
+    from app.mobile_sync.api import SYNC_PORT, app as sync_app
+
+    if not SYNC_PORT:
+        return None
+    server = uvicorn.Server(uvicorn.Config(sync_app, host="127.0.0.1", port=SYNC_PORT, log_level="warning", access_log=False))
+    threading.Thread(target=server.run, name="uvicorn-sync", daemon=True).start()
+    return server
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -156,9 +174,12 @@ async def lifespan(app: FastAPI):
         init_data_if_empty(session, STATE_FILE, DEFAULT_STATE)
         seeding.ensure_desktop_defaults(session)
     stop_backup, backup_thread = start_backup_scheduler()
+    sync_server = _start_dev_sync_server()
     try:
         yield
     finally:
+        if sync_server:
+            sync_server.should_exit = True
         stop_backup.set()
         shutdown_export()
         shutdown_backup()
@@ -358,6 +379,39 @@ def publish_mobile_sync():
         return {**tailscale_publish(SYNC_PORT), "sync_port": SYNC_PORT}
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error))
+
+
+# -- installing the phone app over USB (app/mobile_sync/android.py) ------------------------
+
+class AndroidInstallRequest(BaseModel):
+    serial: str = ""
+
+
+@app.get("/api/mobile/android")
+def get_android_status():
+    """Is the phone app bundled, is adb here, which phones are plugged in."""
+    from app.mobile_sync import android
+
+    return android.status()
+
+
+@app.post("/api/mobile/android/adb")
+def download_android_tools():
+    from app.mobile_sync import android
+
+    try:
+        android.download_adb()
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error))
+    return android.status()
+
+
+@app.post("/api/mobile/android/install")
+def install_android_app(req: AndroidInstallRequest):
+    """Always 200 with {ok, code, message}: "no phone yet" is an expected answer, not a server error."""
+    from app.mobile_sync import android
+
+    return android.install(req.serial)
 
 
 class ResolvePayload(BaseModel):

@@ -6,6 +6,8 @@ import { useLabStore } from '../../store/useLabStore';
 interface Setup { installed: boolean; url: string | null; served: boolean; sync_port: number }
 interface Device { id: string; name: string; paired_at: string; revoked: boolean }
 interface Pairing { code: string; expires_in: number }
+interface Android { apk: { size: number } | null; adb: boolean; devices: { serial: string; state: string; model: string }[] }
+interface InstallResult { ok: boolean; code: string; message: string }
 
 const button = 'px-3 py-1.5 text-xs font-semibold rounded-md border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] hover:bg-[var(--sel)] disabled:opacity-40 cursor-pointer';
 
@@ -18,6 +20,8 @@ export const PhoneSyncCard: React.FC = () => {
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [android, setAndroid] = useState<Android | null>(null);
+  const [installed, setInstalled] = useState<InstallResult | null>(null);
 
   const call = async (url: string, init?: RequestInit) => {
     const res = await fetch(url, init);
@@ -33,6 +37,10 @@ export const PhoneSyncCard: React.FC = () => {
     } catch (e: any) { setError(e.message); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  const loadAndroid = useCallback(async () => {
+    try { setAndroid(await call('/api/mobile/android')); } catch (e: any) { setError(e.message); }
+  }, []);
+  useEffect(() => { void loadAndroid(); }, [loadAndroid]);
 
   const run = (fn: () => Promise<void>) => async () => {
     setBusy(true); setError(null);
@@ -40,6 +48,13 @@ export const PhoneSyncCard: React.FC = () => {
     setBusy(false);
   };
   const publish = run(async () => setSetup(await call('/api/mobile/serve', { method: 'POST' })));
+  const getTools = run(async () => setAndroid(await call('/api/mobile/android/adb', { method: 'POST' })));
+  const installApp = run(async () => {
+    setInstalled(null);
+    setInstalled(await call('/api/mobile/android/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }));
+    await loadAndroid();
+  });
+  const refreshAndroid = run(async () => { setInstalled(null); await loadAndroid(); });
   const startPairing = run(async () => setPairing(await call('/api/mobile/pairing', { method: 'POST' })));
   const revoke = (id: string) => run(async () => {
     await call(`/api/mobile/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -64,6 +79,40 @@ export const PhoneSyncCard: React.FC = () => {
         </div>
       </div>
       <div className="p-3 space-y-3 text-xs">
+        {android && (
+          <div className="space-y-2 pb-3 border-b border-[var(--line)]">
+            <p className="m-0 font-semibold">Install the phone app (Android, USB)</p>
+            {!android.apk && (
+              <p className="m-0 text-[var(--mut)]">This build does not include the phone app. Build it with mobileuild-apk.ps1,
+                or install a release that includes it.</p>
+            )}
+            {android.apk && !android.adb && (
+              <div className="space-y-1">
+                <p className="m-0 text-[var(--mut)]">Installing over USB needs Google&apos;s Android tools (adb, about 7 MB), which are not on this computer.</p>
+                <button type="button" className={button} disabled={busy} onClick={getTools}>Download the Android tools</button>
+              </div>
+            )}
+            {android.apk && android.adb && (
+              <div className="space-y-2">
+                <ol className="m-0 pl-4 space-y-0.5 text-[var(--mut)]">
+                  <li>On the phone: Settings &gt; About phone, tap Build number 7 times, then Settings &gt; System &gt; Developer options &gt; USB debugging.</li>
+                  <li>Plug the phone into this computer, unlock it, and tap Allow on the prompt.</li>
+                </ol>
+                <p className="m-0">
+                  {android.devices.length === 0 ? 'No phone detected yet.'
+                    : android.devices.map((d) => `${d.model || d.serial}: ${d.state === 'device' ? 'ready' : d.state === 'unauthorized' ? 'tap Allow on the phone' : d.state}`).join(' · ')}
+                </p>
+                <div className="flex gap-2">
+                  <button type="button" className={button} disabled={busy || !android.devices.some((d) => d.state === 'device')} onClick={installApp}>
+                    {busy ? 'Installing…' : 'Install on phone'}
+                  </button>
+                  <button type="button" className={button} disabled={busy} onClick={refreshAndroid}>Check again</button>
+                </div>
+              </div>
+            )}
+            {installed && <p className={`m-0 ${installed.ok ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} role="status">{installed.message}</p>}
+          </div>
+        )}
         {setup && !setup.installed && (
           <p className="m-0">Tailscale is not installed or not signed in on this computer. Install it from tailscale.com,
             sign in, and turn on HTTPS certificates for your tailnet.</p>

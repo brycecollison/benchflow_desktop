@@ -74,6 +74,9 @@ MODES = f"""modes:
   --mcp               run the read-only notebook MCP server on stdio and exit: no window, no
                       web server, nothing written to the notebook. Point your MCP client at
                       this executable, not at the Python interpreter that is not installed.
+  --install-android   install the Benchflow phone app on an Android phone plugged in over USB
+                      (USB debugging on) and exit. Downloads Google's adb the first time if
+                      this computer has none. Add --serial ID when more than one phone is plugged in.
   --debug             open the window with the WebView2 devtools attached.
 
 data:   {APP_DATA_DIR}
@@ -97,6 +100,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--restore", nargs="?", const="", default=None, metavar="DIR",
                         help="restore the latest backup and exit")
     parser.add_argument("--mcp", action="store_true", help="run the MCP server on stdio and exit")
+    parser.add_argument("--install-android", action="store_true", help="install the phone app over USB and exit")
+    parser.add_argument("--serial", default="", help="with --install-android: the phone's adb serial")
     parser.add_argument("--force", action="store_true",
                         help="with --import/--restore: replace the existing notebook")
     parser.add_argument("--debug", action="store_true", help="open the window with devtools")
@@ -740,8 +745,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.mcp:
         # stdout must carry only MCP JSON-RPC, so no console attaching here.
         return run_mcp_mode()
-    if args.import_dir or args.backup or args.restore is not None:
+    if args.import_dir or args.backup or args.restore is not None or args.install_android:
         attach_console()
+    if args.install_android:
+        from app.mobile_sync.android import cli as install_android
+
+        return install_android(["--serial", args.serial] if args.serial else [])
     if args.import_dir:
         return run_import_mode(args)
     if args.backup:

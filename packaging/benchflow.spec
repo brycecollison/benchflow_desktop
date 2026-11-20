@@ -33,6 +33,14 @@ datas = [(str(FRONTEND_DIST), "frontend/dist")]
 if SEED.is_dir():
     datas.append((str(SEED), "seed"))
 
+# The phone app (mobile/build-apk.ps1), installed over USB from Settings > Phone sync. Optional:
+# without it the app says it cannot install the phone app (app/mobile_sync/android.py).
+APK = ROOT / "build" / "android" / "benchflow-companion.apk"
+if APK.is_file():
+    datas.append((str(APK), "android"))
+else:
+    print("[spec] build/android/benchflow-companion.apk is missing: this build will not include the phone app")
+
 hiddenimports = [
     *collect_submodules("aspose.note"),   # the .one importer reaches its own submodules lazily
     *collect_submodules("imagecodecs"),   # the TIFF codecs are C extensions imported by name

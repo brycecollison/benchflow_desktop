@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { GlobalDialogModal } from '../../frontend/src/components/Modal/GlobalDialogModal';
-import { getExperimentPhaseData, getExperimentPhases, type ELNBlock } from '../../frontend/src/types/lab';
+import { getExperimentPhaseData, getExperimentPhases, type ELNBlock, type Experiment } from '../../frontend/src/types/lab';
 import { STATUS_LIST } from '../../frontend/src/utils/colors';
 import { withDeviation, withExperimentUpdates, withPhaseUpdate } from '../../frontend/src/utils/experimentUpdates';
 import { alertDialog, confirmDialog } from '../../frontend/src/store/useDialogStore';
@@ -14,7 +14,7 @@ import type { Conflict, Repo } from './repo';
 const SectionTextEditor = lazy(() => import('../../frontend/src/components/Modal/SectionTextEditor')
   .then((m) => ({ default: m.SectionTextEditor })));
 
-type Screen = { kind: 'phase'; expId: string; phaseKey: string } | { kind: 'experiment'; expId: string };
+type Screen = { expId: string; focus?: string }; // focus: the phase to scroll to
 
 // The desktop editor's TipTap instance (its types come from frontend/node_modules).
 type EditorLike = { chain: () => any };
@@ -92,16 +92,14 @@ export function App({ repo }: { repo: Repo }) {
 
   return (
     <div className="h-full flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      {top?.kind === 'phase' ? <PhaseScreen key={top.expId + top.phaseKey} repo={repo} expId={top.expId} phaseKey={top.phaseKey}
-        onBack={() => setStack((s) => s.slice(0, -1))} onOpenExperiment={() => open({ kind: 'experiment', expId: top.expId })} />
-        : top?.kind === 'experiment' ? <ExperimentScreen key={top.expId} repo={repo} expId={top.expId}
-          onBack={() => setStack((s) => s.slice(0, -1))} onOpenPhase={(phaseKey) => open({ kind: 'phase', expId: top.expId, phaseKey })} />
+      {top ? <ExperimentScreen key={top.expId + (top.focus ?? '')} repo={repo} expId={top.expId} focus={top.focus}
+        onBack={() => setStack((s) => s.slice(0, -1))} />
           : (
             <>
               <div className="flex-1 min-h-0 overflow-y-auto">
                 {tab === 'agenda'
-                  ? <AgendaScreen repo={repo} onOpen={(r) => open({ kind: 'phase', expId: r.exp.id, phaseKey: r.phaseKey })}
-                    onOpenExperiment={(expId) => open({ kind: 'experiment', expId })} />
+                  ? <AgendaScreen repo={repo} onOpen={(r) => open({ expId: r.exp.id, focus: r.phaseKey })}
+                    onOpenExperiment={(expId) => open({ expId })} />
                   : <SyncScreen repo={repo} onPairLink={pairFrom} />}
               </div>
               <nav className="flex border-t border-[var(--line)] bg-[var(--card)]">
@@ -234,16 +232,12 @@ function useWakeLock() {
   return { supported: 'wakeLock' in navigator, on, setOn };
 }
 
-function PhaseScreen({ repo, expId, phaseKey, onBack, onOpenExperiment }: { repo: Repo; expId: string; phaseKey: string; onBack: () => void; onOpenExperiment: () => void }) {
-  useRepo(repo);
-  const exp = repo.experiment(expId);
-  const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
+/** One phase inside the experiment: dates, completion, its text, deviations and photos. */
+function PhaseSection({ repo, exp, phaseKey, editorProps }: {
+  repo: Repo; exp: Experiment; phaseKey: string; editorProps: (key: string) => EditorProps;
+}) {
   const [deviation, setDeviation] = useState('');
-  const editor = useRef<EditorLike | null>(null);
-  const onEditor = useCallback((e: unknown) => { editor.current = e as EditorLike; }, []);
-  const awake = useWakeLock();
-  useEffect(() => { if (exp) void repo.fetchAttachments([exp]).then(reloadBrokenImages); }, [repo, expId]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!exp) return <div className="p-4"><button onClick={onBack}>← Back</button><p>This experiment is no longer in the notebook.</p></div>;
+  const expId = exp.id;
   const phase = getExperimentPhaseData(exp, phaseKey);
   const set = (data: Parameters<typeof withPhaseUpdate>[2]) => repo.update(expId, (e) => withPhaseUpdate(e, phaseKey, data));
   const attachments = exp.blocks.filter((b: ELNBlock) => b.section === phaseKey || b.phase === phaseKey);
@@ -254,112 +248,115 @@ function PhaseScreen({ repo, expId, phaseKey, onBack, onOpenExperiment }: { repo
     repo.update(expId, (e) => ({ ...e, blocks: [...e.blocks, { id: crypto.randomUUID(), type: 'img', name: filename, src, section: phaseKey, phase: phaseKey } as ELNBlock] }));
     return src;
   };
-  const stamp = () => {
-    const now = new Date();
-    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    editor.current?.chain().focus().insertContent([{ type: 'text', text: hhmm, marks: [{ type: 'bold' }] }, { type: 'text', text: ' ' }]).run();
-  };
   const conflicts = repo.conflicts.filter((c) => c.experiment_id === expId && (c.unit === phaseKey || c.unit.startsWith(`customPhases/${phaseKey}/`)));
 
   return (
+    <section id={`phase-${phaseKey}`} className="space-y-3 border-t border-[var(--line)] pt-3">
+      <h3 className="m-0 text-base font-semibold">{phase.label}{phase.completed ? ' · done' : ''}</h3>
+      <ConflictCards repo={repo} conflicts={conflicts} />
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        <label>Start<input className="w-full" type="date" value={toIsoDay(phase.startDate)} onChange={(e) => set({ startDate: e.target.value })} /></label>
+        <label>End<input className="w-full" type="date" value={toIsoDay(phase.endDate)} onChange={(e) => set({ endDate: e.target.value })} /></label>
+        <label>Duration<input className="w-full" value={phase.duration} onChange={(e) => set({ duration: e.target.value })} /></label>
+        <label className="flex items-center gap-2 pt-5"><input type="checkbox" checked={phase.completed} onChange={(e) => set({ completed: e.target.checked })} /> Completed</label>
+      </div>
+      <SectionTextEditor label={phase.label} value={phase.content} onChange={(content) => set({ content })}
+        onEnlargeImage={() => {}} onUploadImage={addPhoto} {...editorProps(phaseKey)} />
+      <div className="space-y-2">
+        <h4 className="m-0 text-sm font-semibold">Deviations</h4>
+        {(exp.deviations?.[phaseKey] || []).map((d) => (
+          <p key={d.id} className="m-0 text-sm"><span className="text-[var(--mut)]">{new Date(d.at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span> {d.text}</p>
+        ))}
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (deviation.trim()) repo.update(expId, (x) => withDeviation(x, phaseKey, deviation, repo.deviceId)); setDeviation(''); }}>
+          <input className="flex-1 min-w-0" value={deviation} onChange={(e) => setDeviation(e.target.value)} placeholder="What differed from the plan?" />
+          <button type="submit" disabled={!deviation.trim()}>Log</button>
+        </form>
+      </div>
+      <div className="space-y-2">
+        <h4 className="m-0 text-sm font-semibold">Attachments ({attachments.length})</h4>
+        <div className="grid grid-cols-3 gap-2">
+          {attachments.map((b) => b.type === 'img'
+            ? <img key={b.id} src={b.preview_url || b.src} alt={b.name} className="w-full aspect-square object-cover rounded" />
+            : <span key={b.id} className="text-xs break-all">{b.name || b.type}</span>)}
+        </div>
+        <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--line)] text-sm">
+          Add photo
+          <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) void addPhoto(file).catch((err) => alertDialog({ title: 'Photo not added', message: (err as Error).message, variant: 'danger' }));
+          }} />
+        </label>
+      </div>
+    </section>
+  );
+}
+
+type EditorProps = { toolbarTarget: HTMLDivElement | null; toolbarActive: boolean; onActivate: () => void; onEditor: (e: unknown) => void };
+
+const SECTIONS: [string, string][] = [['purpose', 'Purpose'], ['expectedResults', 'Expected results'], ['experimentalDesign', 'Experimental design']];
+const AFTER: [string, string][] = [['results', 'Results'], ['notes', 'Notes']];
+
+/** The whole experiment, like the desktop's continuous editor. Opened from a phase, it starts
+ * scrolled to that phase, with the rest of the experiment above and below for reference. */
+function ExperimentScreen({ repo, expId, focus, onBack }: { repo: Repo; expId: string; focus?: string; onBack: () => void }) {
+  useRepo(repo);
+  const exp = repo.experiment(expId);
+  const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
+  const [active, setActive] = useState(focus || 'purpose');
+  const editors = useRef<Record<string, EditorLike>>({});
+  const awake = useWakeLock();
+  useEffect(() => { if (exp) void repo.fetchAttachments([exp]).then(reloadBrokenImages); }, [repo, expId]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!exp) return <div className="p-4"><button onClick={onBack}>← Back</button><p>This experiment is no longer in the notebook.</p></div>;
+
+  const editorProps = (key: string): EditorProps => ({
+    toolbarTarget: toolbar, toolbarActive: active === key, onActivate: () => setActive(key),
+    onEditor: (e: unknown) => { editors.current[key] = e as EditorLike; },
+  });
+  const stamp = () => {
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    editors.current[active]?.chain().focus().insertContent([{ type: 'text', text: hhmm, marks: [{ type: 'bold' }] }, { type: 'text', text: ' ' }]).run();
+  };
+  const text = ([key, label]: [string, string]) => (
+    <section key={key} className="space-y-1">
+      <h3 className="m-0 text-sm font-semibold">{label}</h3>
+      <ConflictCards repo={repo} conflicts={repo.conflicts.filter((c) => c.experiment_id === expId && c.unit === key)} />
+      <SectionTextEditor label={label} value={(exp as any)[key] || ''} onChange={(v) => repo.update(expId, (e) => withExperimentUpdates(e, { [key]: v }))}
+        onEnlargeImage={() => {}} onUploadImage={() => Promise.reject(new Error('Add photos from a phase'))} {...editorProps(key)} />
+    </section>
+  );
+  return (
     <div className="h-full flex flex-col min-h-0">
-      <Header title={exp.name} subtitle={`${phase.label}${phase.completed ? ' · done' : ''}`} onBack={onBack} onTitle={onOpenExperiment} />
+      <Header title={exp.name} subtitle={exp.status} onBack={onBack} />
       <div className="flex items-center gap-1 border-b border-[var(--line)] bg-[var(--bg)]">
         <div ref={setToolbar} className="flex-1 min-w-0" />
         <button className="shrink-0 !border-0" onMouseDown={(e) => e.preventDefault()} onClick={stamp} aria-label="Insert time">🕒</button>
       </div>
       <div data-experiment-scroll className="flex-1 overflow-y-auto p-3 space-y-4">
-        <ConflictCards repo={repo} conflicts={conflicts} />
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <label>Start<input className="w-full" type="date" value={toIsoDay(phase.startDate)} onChange={(e) => set({ startDate: e.target.value })} /></label>
-          <label>End<input className="w-full" type="date" value={toIsoDay(phase.endDate)} onChange={(e) => set({ endDate: e.target.value })} /></label>
-          <label>Duration<input className="w-full" value={phase.duration} onChange={(e) => set({ duration: e.target.value })} /></label>
-          <label className="flex items-center gap-2 pt-5"><input type="checkbox" checked={phase.completed} onChange={(e) => set({ completed: e.target.checked })} /> Completed</label>
-        </div>
-        {awake.supported && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={awake.on} onChange={(e) => awake.setOn(e.target.checked)} /> Keep screen on</label>}
         <Suspense fallback={<p className="text-sm text-[var(--mut)]">Loading editor…</p>}>
-          <SectionTextEditor label={phase.label} value={phase.content} onChange={(content) => set({ content })}
-            toolbarTarget={toolbar} toolbarActive onActivate={() => {}} onEnlargeImage={() => {}} onEditor={onEditor}
-            onUploadImage={addPhoto} />
-        </Suspense>
-        <section className="space-y-2">
-          <h3 className="m-0 text-sm font-semibold">Deviations</h3>
-          {(exp.deviations?.[phaseKey] || []).map((d) => (
-            <p key={d.id} className="m-0 text-sm"><span className="text-[var(--mut)]">{new Date(d.at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span> {d.text}</p>
-          ))}
-          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (deviation.trim()) repo.update(expId, (x) => withDeviation(x, phaseKey, deviation, repo.deviceId)); setDeviation(''); }}>
-            <input className="flex-1 min-w-0" value={deviation} onChange={(e) => setDeviation(e.target.value)} placeholder="What differed from the plan?" />
-            <button type="submit" disabled={!deviation.trim()}>Log</button>
-          </form>
-        </section>
-        <section className="space-y-2">
-          <h3 className="m-0 text-sm font-semibold">Attachments ({attachments.length})</h3>
-          <div className="grid grid-cols-3 gap-2">
-            {attachments.map((b) => b.type === 'img'
-              ? <img key={b.id} src={b.preview_url || b.src} alt={b.name} className="w-full aspect-square object-cover rounded" />
-              : <span key={b.id} className="text-xs break-all">{b.name || b.type}</span>)}
-          </div>
-          <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--line)] text-sm">
-            Add photo
-            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              if (file) void addPhoto(file).catch((err) => alertDialog({ title: 'Photo not added', message: (err as Error).message, variant: 'danger' }));
-            }} />
+          <ScrollTo id={focus && `phase-${focus}`} />
+          <label className="block text-sm">Name<input className="w-full" value={exp.name} onChange={(e) => repo.update(expId, (x) => ({ ...x, name: e.target.value }))} /></label>
+          <label className="block text-sm">Status
+            <select className="w-full" value={exp.status} onChange={(e) => repo.update(expId, (x) => withExperimentUpdates(x, { status: e.target.value as typeof x.status }))}>
+              {STATUS_LIST.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
           </label>
-        </section>
+          {awake.supported && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={awake.on} onChange={(e) => awake.setOn(e.target.checked)} /> Keep screen on</label>}
+          {SECTIONS.map(text)}
+          {getExperimentPhases(exp).map((k) => <PhaseSection key={k} repo={repo} exp={exp} phaseKey={k} editorProps={editorProps} />)}
+          {AFTER.map(text)}
+        </Suspense>
       </div>
     </div>
   );
 }
 
-const SECTIONS: [string, string][] = [['purpose', 'Purpose'], ['expectedResults', 'Expected results'], ['experimentalDesign', 'Experimental design']];
-const AFTER: [string, string][] = [['results', 'Results'], ['notes', 'Notes']];
-
-function ExperimentScreen({ repo, expId, onBack, onOpenPhase }: { repo: Repo; expId: string; onBack: () => void; onOpenPhase: (k: string) => void }) {
-  useRepo(repo);
-  const exp = repo.experiment(expId);
-  const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
-  const [active, setActive] = useState('purpose');
-  if (!exp) return <div className="p-4"><button onClick={onBack}>← Back</button><p>This experiment is no longer in the notebook.</p></div>;
-  const text = ([key, label]: [string, string]) => (
-    <section key={key} className="space-y-1">
-      <h3 className="m-0 text-sm font-semibold">{label}</h3>
-      <ConflictCards repo={repo} conflicts={repo.conflicts.filter((c) => c.experiment_id === expId && c.unit === key)} />
-      <Suspense fallback={<p className="text-sm text-[var(--mut)]">Loading editor…</p>}>
-        <SectionTextEditor label={label} value={(exp as any)[key] || ''} onChange={(v) => repo.update(expId, (e) => withExperimentUpdates(e, { [key]: v }))}
-          toolbarTarget={toolbar} toolbarActive={active === key} onActivate={() => setActive(key)} onEnlargeImage={() => {}}
-          onUploadImage={() => Promise.reject(new Error('Add photos from a phase'))} />
-      </Suspense>
-    </section>
-  );
-  return (
-    <div className="h-full flex flex-col min-h-0">
-      <Header title={exp.name} subtitle="Experiment" onBack={onBack} />
-      <div ref={setToolbar} className="border-b border-[var(--line)]" />
-      <div data-experiment-scroll className="flex-1 overflow-y-auto p-3 space-y-4">
-        <label className="block text-sm">Name<input className="w-full" value={exp.name} onChange={(e) => repo.update(expId, (x) => ({ ...x, name: e.target.value }))} /></label>
-        <label className="block text-sm">Status
-          <select className="w-full" value={exp.status} onChange={(e) => repo.update(expId, (x) => withExperimentUpdates(x, { status: e.target.value as typeof x.status }))}>
-            {STATUS_LIST.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </label>
-        {SECTIONS.map(text)}
-        <section className="space-y-1">
-          <h3 className="m-0 text-sm font-semibold">Phases</h3>
-          {getExperimentPhases(exp).map((k) => {
-            const p = getExperimentPhaseData(exp, k);
-            return (
-              <button key={k} onClick={() => onOpenPhase(k)} className="w-full !justify-start text-left">
-                {p.label}{p.startDate ? ` · ${p.startDate}` : ''}{p.completed ? ' · done' : ''}
-              </button>
-            );
-          })}
-        </section>
-        {AFTER.map(text)}
-      </div>
-    </div>
-  );
+/** Scrolls to an element once, after the editors above it have rendered (it sits inside their
+ * Suspense boundary). Images that load later above it are absorbed by the browser's scroll anchoring. */
+function ScrollTo({ id }: { id?: string | false }) {
+  useEffect(() => { if (id) document.getElementById(id)?.scrollIntoView({ block: 'start' }); }, [id]);
+  return null;
 }
 
 function SyncScreen({ repo, onPairLink }: { repo: Repo; onPairLink: (link: string) => Promise<void> }) {
