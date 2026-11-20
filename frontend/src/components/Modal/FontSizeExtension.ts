@@ -1,5 +1,6 @@
 import { Mark, getHTMLFromFragment, getSchema, type Extensions, type NodeConfig } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
+import { isPdfUrl } from './PdfEmbedExtension';
 import { indentedTextBlockView } from '../../utils/editorIndentation';
 
 export const FONT_SIZES = [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72];
@@ -35,6 +36,8 @@ export const createFontSizeStarterKit = (extensions: Extensions) => {
           parseMarkdown(token, helpers) {
             // Stock paragraph hoists a lone image to doc level, but our image is inline, so the doc becomes invalid and Enter throws.
             if (token.type === 'paragraph' && token.tokens?.length === 1 && token.tokens[0].type === 'image') {
+              const { href, text } = token.tokens[0];
+              if (isPdfUrl(href)) return helpers.createNode('pdfEmbed', { src: href, name: text });
               return helpers.createNode('paragraph', undefined, helpers.parseInline(token.tokens));
             }
             return this.parent?.(token, helpers) || [];

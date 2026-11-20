@@ -55,6 +55,8 @@ class ExperimentDB(SQLModel, table=True):
     data_analysis_end_date: Optional[str] = Field(default="")
     results: Optional[str] = Field(default="")
     notes: Optional[str] = Field(default="")
+    figures: Optional[str] = Field(default="")
+    future_directions: Optional[str] = Field(default="")
     phases: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
     custom_phases: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
     blocks: List[Dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))

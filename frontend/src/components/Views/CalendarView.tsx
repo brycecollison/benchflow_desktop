@@ -1324,11 +1324,6 @@ export const CalendarView: React.FC = () => {
         {/* Calendar controls live in the app header, right of the title */}
         {headerSlot && createPortal(
         <div data-calendar-toolbar className="flex flex-nowrap items-center justify-between gap-2 w-full min-w-0 select-none">
-          {/* Date range as the page title; the only part of the toolbar that gives up width when space runs out */}
-          <h2 className="text-[16px] font-semibold tracking-tight m-0 text-[var(--ink)] truncate min-w-0 shrink-[3]">
-            {headerDateLabel}
-          </h2>
-
           {/* Left: View Mode Toggle & Navigation */}
           <div className="flex items-center gap-2 shrink-0">
             <button
@@ -1379,6 +1374,11 @@ export const CalendarView: React.FC = () => {
             </button>
 
           </div>
+
+          {/* Date range sits after the controls so they never move when its width changes; it is the only part that gives up width when space runs out */}
+          <h2 className="text-[16px] font-semibold tracking-tight m-0 text-[var(--ink)] truncate min-w-0 shrink-[3]">
+            {headerDateLabel}
+          </h2>
 
 
           {/* Right: Calendar Filters (Phase toggles, Project filter, Search, Backlog toggle) */}

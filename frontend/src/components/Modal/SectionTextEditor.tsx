@@ -11,11 +11,12 @@ import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Quote, Code,
 import { promptDialog, alertDialog } from '../../store/useDialogStore';
 import { InlineMath, BlockMath } from './MathExtension';
 import { FontSize, createFontSizeStarterKit, FONT_SIZES } from './FontSizeExtension';
+import { PdfEmbed } from './PdfEmbedExtension';
 import { Highlight } from './HighlightExtension';
 import { indentSelectedLines, sinkListItemAcrossMath } from '../../utils/editorIndentation';
 import './SectionTextEditor.css';
 
-const contentExtensions = [TableKit, FontSize, Highlight, InlineMath, BlockMath, ImagePreview.configure({ inline: true })];
+const contentExtensions = [TableKit, FontSize, Highlight, PdfEmbed, InlineMath, BlockMath, ImagePreview.configure({ inline: true })];
 const SectionStarterKit = createFontSizeStarterKit(contentExtensions);
 
 interface Props {
@@ -28,6 +29,9 @@ interface Props {
   onActivate: () => void;
   onEnlargeImage: (src: string, name: string) => void;
 }
+
+const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+const isEmbeddable = (file: File) => file.type.startsWith('image/') || isPdf(file);
 
 const containsMath = (node: JSONContent): boolean =>
   node.type === 'inlineMath' || node.type === 'blockMath' || (node.content?.some(containsMath) ?? false);
@@ -120,10 +124,10 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
       handlePaste: (_view, event) => {
         const clipboard = event.clipboardData;
         const images = Array.from(clipboard?.items || [])
-          .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+          .filter((item) => item.kind === 'file' && (item.type.startsWith('image/') || item.type === 'application/pdf'))
           .map((item) => item.getAsFile())
           .filter((file): file is File => file !== null);
-        const files = images.length ? images : Array.from(clipboard?.files || []).filter((file) => file.type.startsWith('image/'));
+        const files = images.length ? images : Array.from(clipboard?.files || []).filter(isEmbeddable);
         if (files.length) {
           event.preventDefault();
           void uploadImages(files);
@@ -140,7 +144,7 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
         return editor.commands.insertContent(content);
       },
       handleDrop: (view, event) => {
-        const files = Array.from(event.dataTransfer?.files || []).filter((file) => file.type.startsWith('image/'));
+        const files = Array.from(event.dataTransfer?.files || []).filter(isEmbeddable);
         if (!files.length) return false;
         event.preventDefault();
         const position = view.posAtCoords({ left: event.clientX, top: event.clientY });
@@ -189,7 +193,9 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
     for (const file of files) {
       try {
         const src = await onUploadImage(file);
-        if (!editor.isDestroyed) editor.chain().focus().setImage({ src, alt: file.name, title: file.name }).run();
+        if (editor.isDestroyed) continue;
+        if (isPdf(file)) editor.chain().focus().insertContent({ type: 'pdfEmbed', attrs: { src, name: file.name } }).run();
+        else editor.chain().focus().setImage({ src, alt: file.name, title: file.name }).run();
       } catch (error) {
         setImageErrors((previous) => [...previous, `${file.name}: ${error instanceof Error ? error.message : 'Image upload failed'}`]);
       }
@@ -273,12 +279,12 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
         </select>
         {renderFontSize()}
         {tools.map((tool) => renderTool(tool))}
-        <input ref={imageInput} type="file" accept="image/*" multiple className="hidden" aria-label={`Insert images into ${label}`} onChange={(event) => {
+        <input ref={imageInput} type="file" accept="image/*,application/pdf" multiple className="hidden" aria-label={`Insert images into ${label}`} onChange={(event) => {
           const files = Array.from(event.currentTarget.files || []);
           event.currentTarget.value = '';
           void uploadImages(files);
         }} />
-        <button type="button" aria-label="Insert image" title="Insert image" disabled={uploading} className="!p-1.5 !border-0 !bg-transparent" onMouseDown={(event) => event.preventDefault()} onClick={() => imageInput.current?.click()}><ImagePlus size={15} /></button>
+        <button type="button" aria-label="Insert image" title="Insert image or PDF" disabled={uploading} className="!p-1.5 !border-0 !bg-transparent" onMouseDown={(event) => event.preventDefault()} onClick={() => imageInput.current?.click()}><ImagePlus size={15} /></button>
         {state.table && (
           <>
             <button type="button" className="!text-xs !py-1" onClick={() => editor.chain().focus().addRowAfter().run()}>Add row</button>

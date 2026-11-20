@@ -107,7 +107,7 @@ def refs_from_text(text: Optional[str]) -> Set[str]:
 
 _SCAN_COLS = (
     "purpose", "expected_results", "experimental_design", "experimental_protocol",
-    "data_acquisition", "data_analysis", "results", "notes",
+    "data_acquisition", "data_analysis", "results", "figures", "future_directions", "notes",
     "blocks", "custom_phases", "phases",
 )
 

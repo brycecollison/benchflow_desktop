@@ -35,3 +35,7 @@
 .section-document .section-math.ProseMirror-selectednode { outline: 2px solid var(--acc); border-radius: 3px; }
 .section-document .section-math svg { display: inline-block; }
 .section-document:focus { box-shadow: inset 0 0 0 1px var(--acc); }
+.section-document .section-pdf-embed { margin: 0.75rem 0; border: 1px solid var(--line); border-radius: 0.5rem; overflow: hidden; }
+.section-document .section-pdf-embed.ProseMirror-selectednode { outline: 2px solid var(--acc); }
+.section-document .section-pdf-header { display: flex; justify-content: space-between; gap: 1rem; padding: 0.25rem 0.75rem; font-size: 0.75rem; color: var(--mut); border-bottom: 1px solid var(--line); }
+.section-document .section-pdf-embed iframe { display: block; width: 100%; height: 600px; border: 0; background: #fff; }
