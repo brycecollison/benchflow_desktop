@@ -5,14 +5,17 @@
 #                       sibling checkout named in UPSTREAM.md)
 #   ... -SkipTest      skip packaging/test_frozen.py (which opens a real window)
 #   ... -SkipInstaller skip the Inno Setup step
+#   ... -SkipAndroid   do not build the phone app; the build then cannot install it from Settings
 #
 # Needs: Node (for the UI), this repo's venv with pyinstaller, and Inno Setup 6 for the installer
-# (iscc.exe on PATH, or point $env:ISCC at it).
+# (iscc.exe on PATH, or point $env:ISCC at it). The phone app also needs JDK 21 and the Android SDK
+# (mobile\build-apk.ps1).
 param(
     [switch]$Seed,
     [string]$WebRepo = "",
     [switch]$SkipTest,
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    [switch]$SkipAndroid
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,6 +48,12 @@ npm --prefix frontend ci
 if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
 npm --prefix frontend run build
 if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }
+
+if (-not $SkipAndroid) {
+    Write-Host "`n=== the phone app (APK, bundled into the exe) ===" -ForegroundColor Cyan
+    & (Join-Path $root "mobile\build-apk.ps1")
+    if ($LASTEXITCODE -ne 0) { throw "APK build failed - fix it, or pass -SkipAndroid to ship without the phone app" }
+}
 
 Write-Host "`n=== the exe (onedir) ===" -ForegroundColor Cyan
 & $py -m PyInstaller packaging/benchflow.spec --noconfirm

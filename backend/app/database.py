@@ -1,6 +1,10 @@
+import json
+
 from sqlmodel import SQLModel, create_engine, Session
 from sqlalchemy import event
 
+from app.mobile_sync.merge import ensure_block_ids
+from app.models import NOTEBOOK_SCHEMA_VERSION
 from app.paths import DATA_DIR, DB_PATH
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -58,11 +62,33 @@ def init_db():
             "future_directions": "TEXT DEFAULT ''",
             "phases": "JSON DEFAULT NULL",
             "custom_phases": "JSON DEFAULT NULL",
+            "deviations": "JSON DEFAULT NULL",
         }
         for col_name, col_type in new_cols.items():
             if col_name not in cols:
                 conn.exec_driver_sql(f"ALTER TABLE experiments ADD COLUMN {col_name} {col_type}")
+        # Sync columns. Existing rows start at rev 1, so a first pull with since=0 sees them all.
+        for table in ("experiments", "projects"):
+            cols = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            if "rev" not in cols:
+                conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN rev INTEGER NOT NULL DEFAULT 0")
+                conn.exec_driver_sql(f"UPDATE {table} SET rev = 1")
+            if "device_id" not in cols:
+                conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN device_id VARCHAR NOT NULL DEFAULT ''")
+            conn.exec_driver_sql(f"CREATE INDEX IF NOT EXISTS ix_{table}_rev ON {table} (rev)")
+        _backfill_block_ids(conn)
+        if conn.exec_driver_sql("PRAGMA user_version").scalar() < NOTEBOOK_SCHEMA_VERSION:
+            conn.exec_driver_sql(f"PRAGMA user_version = {NOTEBOOK_SCHEMA_VERSION}")
         conn.commit()
+
+
+def _backfill_block_ids(conn) -> None:
+    """Blocks had no id before mobile sync; give every stored block one (idempotent)."""
+    for exp_id, raw in conn.exec_driver_sql("SELECT id, blocks FROM experiments").fetchall():
+        blocks = json.loads(raw) if raw else []
+        if any(not b.get("id") for b in blocks):
+            conn.exec_driver_sql("UPDATE experiments SET blocks = ? WHERE id = ?",
+                                 (json.dumps(ensure_block_ids(blocks)), exp_id))
 
 def get_session():
     with Session(engine) as session:

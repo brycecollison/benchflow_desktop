@@ -1,6 +1,7 @@
 // node frontend/scripts/gantt-check.ts
 import assert from 'node:assert/strict';
 import { getGanttPhases, toCalendarDay } from '../src/utils/gantt.ts';
+import { getExperimentPhaseData } from '../src/types/lab.ts';
 import type { Experiment, Project } from '../src/types/lab.ts';
 
 const base: Experiment = {
@@ -41,4 +42,10 @@ assert.equal(phase.endDay, phase.startDay, 'Half-day phases occupy a day');
 assert.equal(toCalendarDay('2026-02-30'), null, 'Impossible ISO dates are rejected');
 assert.equal(toCalendarDay('2024-02-29')! + 1, toCalendarDay('2024-03-01'), 'Leap days are preserved');
 assert.equal(toCalendarDay('Tuesday, June 23, 2026'), toCalendarDay('2026-06-23'), 'Legacy notebook dates are supported');
+// The calendar, its tray and the editor read phase dates through getExperimentPhaseData.
+const read = (exp: Partial<Experiment>) => getExperimentPhaseData({ ...base, ...exp }, 'experimentalProtocol');
+assert.equal(read({ experimentalProtocolStartDate: 'Tuesday, June 23, 2026' }).startDate, '2026-06-23', 'Legacy dates read as ISO');
+assert.equal(read({ experimentalProtocolStartDate: ' 2026-03-07 ' }).startDate, '2026-03-07', 'ISO dates are kept');
+assert.equal(read({ experimentalProtocolStartDate: 'TBD' }).startDate, 'TBD', 'Unparseable dates are kept as stored, not dropped');
+assert.equal(read({ customPhases: [{ id: 'experimentalProtocol' } as any], experimentalProtocolEndDate: undefined }).endDate, '', 'Missing dates stay empty');
 console.log('PASS: Gantt phase filtering, date handling, and inclusive durations');

@@ -1,9 +1,11 @@
 import json
+import threading
+import uuid
 from pathlib import Path
-from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from sqlmodel import Session, select, delete
 
+from app.mobile_sync.merge import merge_experiment
 from app.models import (
     ProjectDB,
     PaperDB,
@@ -11,18 +13,20 @@ from app.models import (
     ExperimentDB,
     ExperimentDependencyDB,
     SettingDB,
+    SyncConflictDB,
+    TombstoneDB,
+    apply_exp_dict,
+    content_changed,
+    exp_to_dict,
+    next_rev,
+    normalize_phases,  # noqa: F401  (re-exported: notebook_queries imports it from here)
 )
 from app.schemas import LabState, Project, Paper, Experiment
 
-def normalize_phases(phases: Optional[List[str]]) -> Optional[List[str]]:
-    if phases is None:
-        return None
-    mapping = {
-        "Protocol": "experimentalProtocol",
-        "Acquisition": "dataAcquisition",
-        "Analysis": "dataAnalysis",
-    }
-    return [mapping.get(p, p) for p in phases]
+# The window's save and phone ops (app/mobile_sync) are both read-modify-write on the same rows,
+# from different server threads. One lock, so neither writes over a row the other just changed.
+WRITE_LOCK = threading.RLock()
+
 
 def get_setting(session: Session, key: str) -> Optional[str]:
     s = session.get(SettingDB, key)
@@ -37,7 +41,53 @@ def set_setting(session: Session, key: str, value: str) -> None:
         session.add(s)
     session.commit()
 
+
+def get_device_id(session: Session) -> str:
+    """This PC's sync identity. In settings, so it stays with the machine, not the notebook.
+    Commits when it creates one: call it before making other changes in the session."""
+    device_id = get_setting(session, "device_id")
+    if not device_id:
+        device_id = "desktop-" + uuid.uuid4().hex[:12]
+        set_setting(session, "device_id", device_id)
+    return device_id
+
+
+def current_rev(session: Session) -> int:
+    return next_rev(session.connection()) - 1
+
+
+def _deps(session: Session, exp_id: str) -> List[str]:
+    return list(session.exec(
+        select(ExperimentDependencyDB.depends_on_id).where(ExperimentDependencyDB.experiment_id == exp_id)
+    ).all())
+
+
+def _set_deps(session: Session, exp_id: str, deps: List[str]) -> None:
+    session.exec(delete(ExperimentDependencyDB).where(ExperimentDependencyDB.experiment_id == exp_id))
+    for dep_id in deps:
+        session.add(ExperimentDependencyDB(experiment_id=exp_id, depends_on_id=dep_id))
+
+
+def experiment_api(session: Session, e: ExperimentDB) -> Experiment:
+    return Experiment(**exp_to_dict(e), deps=_deps(session, e.id))
+
+
+def canonical(exp: Dict[str, Any]) -> Dict[str, Any]:
+    """One shape for comparing experiments: what the API model dumps (None keys included)."""
+    return Experiment.model_validate(exp).model_dump()
+
+
+def record_conflict(session: Session, exp_id: str, conflict: Dict[str, Any], source: str,
+                    device_id: str = "", op_id: str = "") -> None:
+    session.add(SyncConflictDB(
+        id=uuid.uuid4().hex, experiment_id=exp_id, unit=conflict["unit"],
+        kept=json.dumps(conflict.get("kept")), parked=json.dumps(conflict.get("parked")),
+        base=json.dumps(conflict.get("base")), source=source, device_id=device_id, op_id=op_id,
+    ))
+
+
 def get_lab_state(session: Session) -> LabState:
+    rev = current_rev(session)  # before reading rows: a later write must look newer, not be skipped
     papers = session.exec(select(PaperDB)).all()
     paper_list = [
         Paper(
@@ -49,80 +99,61 @@ def get_lab_state(session: Session) -> LabState:
         for p in papers
     ]
 
-    projects = session.exec(select(ProjectDB)).all()
     project_list = []
-
-    for proj in projects:
-        # Paper IDs associated with this project
+    for proj in session.exec(select(ProjectDB)).all():
         links = session.exec(
             select(ProjectPaperLinkDB).where(ProjectPaperLinkDB.project_id == proj.id)
         ).all()
-        paper_ids = [l.paper_id for l in links]
-
-        # Experiments in this project
-        exps = session.exec(
-            select(ExperimentDB).where(ExperimentDB.project_id == proj.id)
-        ).all()
-        exp_list = []
-        for e in exps:
-            deps = session.exec(
-                select(ExperimentDependencyDB.depends_on_id).where(
-                    ExperimentDependencyDB.experiment_id == e.id
-                )
-            ).all()
-
-            exp_list.append(
-                Experiment(
-                    id=e.id,
-                    name=e.name,
-                    status=e.status,
-                    priority=e.priority or "",
-                    paper=e.paper or "",
-                    deps=list(deps),
-                    purpose=getattr(e, "purpose", "") or "",
-                    expectedResults=getattr(e, "expected_results", "") or "",
-                    experimentalDesign=getattr(e, "experimental_design", "") or "",
-                    experimentalProtocol=getattr(e, "experimental_protocol", "") or "",
-                    experimentalProtocolDuration=getattr(e, "experimental_protocol_duration", "") or "",
-                    experimentalProtocolCompleted=bool(getattr(e, "experimental_protocol_completed", False)),
-                    experimentalProtocolStartDate=getattr(e, "experimental_protocol_start_date", "") or "",
-                    experimentalProtocolEndDate=getattr(e, "experimental_protocol_end_date", "") or "",
-                    dataAcquisition=getattr(e, "data_acquisition", "") or "",
-                    dataAcquisitionDuration=getattr(e, "data_acquisition_duration", "") or "",
-                    dataAcquisitionCompleted=bool(getattr(e, "data_acquisition_completed", False)),
-                    dataAcquisitionStartDate=getattr(e, "data_acquisition_start_date", "") or "",
-                    dataAcquisitionEndDate=getattr(e, "data_acquisition_end_date", "") or "",
-                    dataAnalysis=getattr(e, "data_analysis", "") or "",
-                    dataAnalysisDuration=getattr(e, "data_analysis_duration", "") or "",
-                    dataAnalysisCompleted=bool(getattr(e, "data_analysis_completed", False)),
-                    dataAnalysisStartDate=getattr(e, "data_analysis_start_date", "") or "",
-                    dataAnalysisEndDate=getattr(e, "data_analysis_end_date", "") or "",
-                    results=getattr(e, "results", "") or "",
-                    notes=e.notes or "",
-                    figures=getattr(e, "figures", "") or "",
-                    futureDirections=getattr(e, "future_directions", "") or "",
-                    phases=normalize_phases(getattr(e, "phases", None)),
-                    customPhases=getattr(e, "custom_phases", None),
-                    blocks=e.blocks or [],
-                    px=e.px,
-                    py=e.py,
-                )
-            )
-
+        exps = session.exec(select(ExperimentDB).where(ExperimentDB.project_id == proj.id)).all()
         project_list.append(
             Project(
                 id=proj.id,
                 name=proj.name,
-                paperIds=paper_ids,
-                exps=exp_list,
+                paperIds=[l.paper_id for l in links],
+                exps=[experiment_api(session, e) for e in exps],
                 archived=proj.archived,
             )
         )
 
-    return LabState(projects=project_list, papers=paper_list)
+    return LabState(projects=project_list, papers=paper_list, rev=rev)
 
 
-def save_lab_state(session: Session, state: LabState):
+def changes_since(session: Session, since: int) -> Dict[str, Any]:
+    """Records changed after rev `since`, and deletes, for a window or phone catching up."""
+    rev = current_rev(session)  # first, as in get_lab_state
+    projects = session.exec(select(ProjectDB).where(ProjectDB.rev > since)).all()
+    exps = session.exec(select(ExperimentDB).where(ExperimentDB.rev > since)).all()
+    tombs = session.exec(select(TombstoneDB).where(TombstoneDB.rev > since)).all()
+    return {
+        "rev": rev,
+        "projects": [{
+            "id": p.id, "name": p.name, "archived": p.archived, "rev": p.rev,
+            "paperIds": list(session.exec(select(ProjectPaperLinkDB.paper_id)
+                                          .where(ProjectPaperLinkDB.project_id == p.id)).all()),
+        } for p in projects],
+        "experiments": [{**experiment_api(session, e).model_dump(), "projectId": e.project_id, "rev": e.rev}
+                        for e in exps],
+        "deleted": [{"kind": t.kind, "id": t.id, "rev": t.rev} for t in tombs],
+    }
+
+
+def save_lab_state(session: Session, state: LabState) -> None:
+    """Write the window's whole state.
+
+    A merge-aware window (state.since set) only writes the experiments it sends a base for, merges
+    each against the stored row field by field (its own edits win; what it overwrote is parked in
+    sync_conflicts), and never deletes a record changed after `since` - it has not seen it.
+    Without `since` (imports, seeding, older callers) the state replaces the notebook, as before.
+    """
+    with WRITE_LOCK:
+        desktop_id = get_device_id(session)
+        _save_lab_state(session, state, desktop_id)
+
+
+def _save_lab_state(session: Session, state: LabState, desktop_id: str) -> None:
+    merge_aware = state.since is not None
+    bases = state.bases or {}
+
     # 1. Synchronize Papers
     incoming_paper_ids = set()
     for paper in state.papers:
@@ -157,7 +188,6 @@ def save_lab_state(session: Session, state: LabState):
         if db_proj:
             db_proj.name = proj.name
             db_proj.archived = bool(proj.archived)
-            db_proj.updated_at = datetime.now(timezone.utc)
         else:
             db_proj = ProjectDB(
                 id=proj.id,
@@ -165,6 +195,8 @@ def save_lab_state(session: Session, state: LabState):
                 archived=bool(proj.archived),
             )
             session.add(db_proj)
+        if content_changed(db_proj):
+            db_proj.device_id = desktop_id
 
         # Sync Paper Links
         session.exec(
@@ -176,133 +208,72 @@ def save_lab_state(session: Session, state: LabState):
         # Sync Experiments
         for exp in proj.exps:
             incoming_exp_ids.add(exp.id)
-            blocks_dump = [
-                b.model_dump() if hasattr(b, "model_dump") else (b if isinstance(b, dict) else dict(b))
-                for b in exp.blocks
-            ]
-            custom_phases_dump = [
-                cp.model_dump() if hasattr(cp, "model_dump") else (cp if isinstance(cp, dict) else dict(cp))
-                for cp in exp.customPhases
-            ] if exp.customPhases is not None else None
+            incoming = exp.model_dump()
             db_exp = session.get(ExperimentDB, exp.id)
-            if db_exp:
-                db_exp.project_id = proj.id
-                db_exp.name = exp.name
-                db_exp.status = exp.status
-                db_exp.priority = exp.priority or ""
-                db_exp.paper = exp.paper or ""
-                db_exp.purpose = exp.purpose or ""
-                db_exp.expected_results = exp.expectedResults or ""
-                db_exp.experimental_design = exp.experimentalDesign or ""
-                db_exp.experimental_protocol = exp.experimentalProtocol or ""
-                db_exp.experimental_protocol_duration = exp.experimentalProtocolDuration or ""
-                db_exp.experimental_protocol_completed = bool(exp.experimentalProtocolCompleted)
-                db_exp.experimental_protocol_start_date = exp.experimentalProtocolStartDate or ""
-                db_exp.experimental_protocol_end_date = exp.experimentalProtocolEndDate or ""
-                db_exp.data_acquisition = exp.dataAcquisition or ""
-                db_exp.data_acquisition_duration = exp.dataAcquisitionDuration or ""
-                db_exp.data_acquisition_completed = bool(exp.dataAcquisitionCompleted)
-                db_exp.data_acquisition_start_date = exp.dataAcquisitionStartDate or ""
-                db_exp.data_acquisition_end_date = exp.dataAcquisitionEndDate or ""
-                db_exp.data_analysis = exp.dataAnalysis or ""
-                db_exp.data_analysis_duration = exp.dataAnalysisDuration or ""
-                db_exp.data_analysis_completed = bool(exp.dataAnalysisCompleted)
-                db_exp.data_analysis_start_date = exp.dataAnalysisStartDate or ""
-                db_exp.data_analysis_end_date = exp.dataAnalysisEndDate or ""
-                db_exp.results = exp.results or ""
-                db_exp.notes = exp.notes or ""
-                db_exp.figures = exp.figures or ""
-                db_exp.future_directions = exp.futureDirections or ""
-                db_exp.phases = normalize_phases(exp.phases)
-                db_exp.custom_phases = custom_phases_dump
-                db_exp.blocks = blocks_dump
-                db_exp.px = exp.px
-                db_exp.py = exp.py
-                db_exp.updated_at = datetime.now(timezone.utc)
-            else:
-                db_exp = ExperimentDB(
-                    id=exp.id,
-                    project_id=proj.id,
-                    name=exp.name,
-                    status=exp.status,
-                    priority=exp.priority or "",
-                    paper=exp.paper or "",
-                    purpose=exp.purpose or "",
-                    expected_results=exp.expectedResults or "",
-                    experimental_design=exp.experimentalDesign or "",
-                    experimental_protocol=exp.experimentalProtocol or "",
-                    experimental_protocol_duration=exp.experimentalProtocolDuration or "",
-                    experimental_protocol_completed=bool(exp.experimentalProtocolCompleted),
-                    experimental_protocol_start_date=exp.experimentalProtocolStartDate or "",
-                    experimental_protocol_end_date=exp.experimentalProtocolEndDate or "",
-                    data_acquisition=exp.dataAcquisition or "",
-                    data_acquisition_duration=exp.dataAcquisitionDuration or "",
-                    data_acquisition_completed=bool(exp.dataAcquisitionCompleted),
-                    data_acquisition_start_date=exp.dataAcquisitionStartDate or "",
-                    data_acquisition_end_date=exp.dataAcquisitionEndDate or "",
-                    data_analysis=exp.dataAnalysis or "",
-                    data_analysis_duration=exp.dataAnalysisDuration or "",
-                    data_analysis_completed=bool(exp.dataAnalysisCompleted),
-                    data_analysis_start_date=exp.dataAnalysisStartDate or "",
-                    data_analysis_end_date=exp.dataAnalysisEndDate or "",
-                    results=exp.results or "",
-                    notes=exp.notes or "",
-                    figures=exp.figures or "",
-                    future_directions=exp.futureDirections or "",
-                    phases=normalize_phases(exp.phases),
-                    custom_phases=custom_phases_dump,
-                    blocks=blocks_dump,
-                    px=exp.px,
-                    py=exp.py,
-                )
+            if db_exp is None:
+                db_exp = ExperimentDB(id=exp.id, project_id=proj.id, name=exp.name, device_id=desktop_id)
+                apply_exp_dict(db_exp, incoming)
                 session.add(db_exp)
-
-            # Sync Dependencies
-            session.exec(
-                delete(ExperimentDependencyDB).where(
-                    ExperimentDependencyDB.experiment_id == exp.id
-                )
-            )
-            for dep_id in exp.deps:
-                session.add(
-                    ExperimentDependencyDB(
-                        experiment_id=exp.id,
-                        depends_on_id=dep_id
-                    )
-                )
+                _set_deps(session, exp.id, incoming["deps"])
+                continue
+            db_exp.project_id = proj.id
+            if merge_aware and exp.id not in bases:
+                continue  # not edited in the window: its copy may be stale, so it is not written
+            if merge_aware:
+                current = experiment_api(session, db_exp).model_dump()
+                merged, conflicts = merge_experiment(
+                    bases[exp.id].model_dump(), current, incoming,
+                    incoming_wins_text=True, incoming_wins_other=True)
+                incoming = canonical(merged)
+                other = "desktop" if db_exp.device_id in ("", desktop_id) else "phone"
+                for conflict in conflicts:
+                    record_conflict(session, exp.id, conflict, source=other, device_id=db_exp.device_id)
+            apply_exp_dict(db_exp, incoming)
+            if content_changed(db_exp):
+                db_exp.device_id = desktop_id
+            _set_deps(session, exp.id, incoming["deps"])
 
     # Clean up experiments removed from state
-    all_exps = session.exec(select(ExperimentDB)).all()
-    for e in all_exps:
-        if e.id not in incoming_exp_ids:
-            session.exec(
-                delete(ExperimentDependencyDB).where(
-                    (ExperimentDependencyDB.experiment_id == e.id)
-                    | (ExperimentDependencyDB.depends_on_id == e.id)
-                )
+    kept_project_ids = set()
+    for e in session.exec(select(ExperimentDB)).all():
+        if e.id in incoming_exp_ids:
+            continue
+        if merge_aware and e.rev > state.since:
+            kept_project_ids.add(e.project_id)  # created or changed since the window last synced
+            continue
+        session.exec(
+            delete(ExperimentDependencyDB).where(
+                (ExperimentDependencyDB.experiment_id == e.id)
+                | (ExperimentDependencyDB.depends_on_id == e.id)
             )
-            session.delete(e)
+        )
+        session.delete(e)
 
     # Clean up projects removed from state
-    all_projs = session.exec(select(ProjectDB)).all()
-    for pr in all_projs:
-        if pr.id not in incoming_project_ids:
-            session.exec(
-                delete(ProjectPaperLinkDB).where(
-                    ProjectPaperLinkDB.project_id == pr.id
-                )
+    for pr in session.exec(select(ProjectDB)).all():
+        if pr.id in incoming_project_ids or pr.id in kept_project_ids:
+            continue
+        if merge_aware and pr.rev > state.since:
+            continue
+        session.exec(
+            delete(ProjectPaperLinkDB).where(
+                ProjectPaperLinkDB.project_id == pr.id
             )
-            session.delete(pr)
+        )
+        session.delete(pr)
 
     session.commit()
 
 
 def reset_lab_state(session: Session, default_data: Dict[str, Any]):
     session.exec(delete(ExperimentDependencyDB))
-    session.exec(delete(ExperimentDB))
     session.exec(delete(ProjectPaperLinkDB))
-    session.exec(delete(ProjectDB))
     session.exec(delete(PaperDB))
+    # one by one, not a bulk delete: each gets a tombstone, so a paired phone drops it too
+    for model in (ExperimentDB, ProjectDB):
+        for row in session.exec(select(model)).all():
+            session.delete(row)
+        session.flush()
     session.commit()
 
     state = LabState(**default_data)

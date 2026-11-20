@@ -1,3 +1,5 @@
+import { phaseDate } from '../utils/schedule.ts';
+
 export type ExperimentStatus = 'Planning' | 'Planned' | 'Running' | 'Done' | 'Blocked';
 export type PriorityLevel = 'High' | 'Med' | 'Low' | '';
 
@@ -6,6 +8,7 @@ export type ExperimentSectionKey =
   | WorkflowPhaseKey | 'results' | 'figures' | 'futureDirections' | 'notes';
 
 interface SectionAttachment {
+  id?: string; // stable block id (mobile sync merges blocks by id); the server fills a missing one
   section?: ExperimentSectionKey; // Legacy attachments without a section belong to Results.
   phase?: WorkflowPhaseKey;
 }
@@ -73,11 +76,33 @@ export interface Experiment {
   futureDirections?: string;
   notes?: string;
   blocks: ELNBlock[];
+  /** Append-only deviation log per phase key (phone and desktop entries merge by id). */
+  deviations?: Record<string, Deviation[]> | null;
   /** Phases included in this experiment. Undefined/null = default phases (legacy experiments); empty = no phases. */
   phases?: (WorkflowPhaseKey | string)[];
   customPhases?: CustomPhase[];
   px?: number; // custom manual X
   py?: number; // custom manual Y
+}
+
+/** The side of a merge that was set aside (backend sync_conflicts). */
+export interface SyncConflict {
+  id: string;
+  experiment_id: string;
+  experiment_name: string;
+  unit: string; // section key, `customPhases/<id>/content`, `blocks/<id>`, ...
+  kept: unknown;
+  parked: unknown;
+  source: string; // phone | desktop | restored | rejected
+  device_id: string;
+  created_at: string;
+}
+
+export interface Deviation {
+  id: string;
+  at: string; // ISO timestamp
+  device_id: string;
+  text: string;
 }
 
 export interface CustomPhase {
@@ -242,8 +267,8 @@ export function getExperimentPhaseData(exp: Experiment, phaseKey: string): Phase
       content: exp.experimentalProtocol || '',
       duration: exp.experimentalProtocolDuration || '',
       completed: Boolean(exp.experimentalProtocolCompleted),
-      startDate: exp.experimentalProtocolStartDate || '',
-      endDate: exp.experimentalProtocolEndDate || '',
+      startDate: phaseDate(exp.experimentalProtocolStartDate),
+      endDate: phaseDate(exp.experimentalProtocolEndDate),
     };
   }
   if (phaseKey === 'dataAcquisition') {
@@ -253,8 +278,8 @@ export function getExperimentPhaseData(exp: Experiment, phaseKey: string): Phase
       content: exp.dataAcquisition || '',
       duration: exp.dataAcquisitionDuration || '',
       completed: Boolean(exp.dataAcquisitionCompleted),
-      startDate: exp.dataAcquisitionStartDate || '',
-      endDate: exp.dataAcquisitionEndDate || '',
+      startDate: phaseDate(exp.dataAcquisitionStartDate),
+      endDate: phaseDate(exp.dataAcquisitionEndDate),
     };
   }
   if (phaseKey === 'dataAnalysis') {
@@ -264,8 +289,8 @@ export function getExperimentPhaseData(exp: Experiment, phaseKey: string): Phase
       content: exp.dataAnalysis || '',
       duration: exp.dataAnalysisDuration || '',
       completed: Boolean(exp.dataAnalysisCompleted),
-      startDate: exp.dataAnalysisStartDate || '',
-      endDate: exp.dataAnalysisEndDate || '',
+      startDate: phaseDate(exp.dataAnalysisStartDate),
+      endDate: phaseDate(exp.dataAnalysisEndDate),
     };
   }
   const custom = (exp.customPhases || []).find((p) => p.id === phaseKey);
@@ -275,8 +300,8 @@ export function getExperimentPhaseData(exp: Experiment, phaseKey: string): Phase
     content: custom?.content || '',
     duration: custom?.duration || '',
     completed: Boolean(custom?.completed),
-    startDate: custom?.startDate || '',
-    endDate: custom?.endDate || '',
+    startDate: phaseDate(custom?.startDate),
+    endDate: phaseDate(custom?.endDate),
   };
 }
 
@@ -395,10 +420,14 @@ export interface FilterState {
   status: string[];
   paper: string[];
   priority: string[];
+  deviations: string[]; // 'yes' | 'no'
   statusNot: boolean;
   paperNot: boolean;
   priorityNot: boolean;
+  deviationsNot: boolean;
 }
+
+export type FilterKey = 'status' | 'paper' | 'priority' | 'deviations';
 
 export interface NodePosition {
   x: number;

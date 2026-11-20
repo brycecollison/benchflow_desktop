@@ -4,3 +4,13 @@
 /* Bench use: bigger base text and touch targets than desktop. */
 html, body { font-size: 16px; }
 button { min-height: 44px; }
+#root { height: 100%; } /* body is overflow:hidden (desktop css): the app must fit the screen and scroll inside */
+
+/* One scrolling row of editor tools instead of three or four wrapped rows: with the keyboard up
+   the text needs the room (SPIKE.md E2/E6). */
+[role="toolbar"][aria-label="Experiment formatting"] { flex-wrap: nowrap; overflow-x: auto; padding: 2px 8px; }
+[role="toolbar"][aria-label="Experiment formatting"] > span:first-child { display: none; }
+[role="toolbar"][aria-label="Experiment formatting"] > * { flex-shrink: 0; }
+/* Landscape with the keyboard up leaves ~130 px: drop the title bar, keep tools and text. */
+@media (max-height: 320px) { .phone-header { display: none; } }
+input:not([type="checkbox"]), select { padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }

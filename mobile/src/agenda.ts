@@ -1,4 +1,5 @@
 import { getExperimentPhaseData, getExperimentPhases, type Experiment } from '../../frontend/src/types/lab.ts';
+import { isoDay, toIsoDay } from '../../frontend/src/utils/schedule.ts';
 
 export interface Project { id: string; name: string; archived?: boolean; exps: Experiment[] }
 export interface AgendaRow {
@@ -6,10 +7,6 @@ export interface AgendaRow {
   phaseKey: string; label: string; start: string; end: string; completed: boolean;
 }
 export interface Agenda { today: AgendaRow[]; upcoming: AgendaRow[]; past: AgendaRow[] }
-
-/** Local calendar date as YYYY-MM-DD, the format the notebook stores. */
-export const isoDay = (d = new Date()) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /** Scheduled phases of non-archived projects: active today first, then upcoming, then past (latest first). */
 export function buildAgenda(projects: Project[], today = isoDay()): Agenda {
@@ -19,9 +16,10 @@ export function buildAgenda(projects: Project[], today = isoDay()): Agenda {
     for (const exp of p.exps) {
       for (const key of getExperimentPhases(exp)) {
         const ph = getExperimentPhaseData(exp, key);
-        if (!ph.startDate.trim()) continue;
+        const start = toIsoDay(ph.startDate);
+        if (!start) continue;
         rows.push({ projectId: p.id, projectName: p.name, exp, phaseKey: key, label: ph.label,
-          start: ph.startDate, end: ph.endDate || ph.startDate, completed: ph.completed });
+          start, end: toIsoDay(ph.endDate) || start, completed: ph.completed });
       }
     }
   }

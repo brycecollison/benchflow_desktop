@@ -2,7 +2,7 @@
 
 Rule from the plan: parity is a list of the web app's features with a pass/fail against the
 **installed exe on a machine with no Node and no Python** — not "the code is the same, so it
-works". Any ✗ is a release blocker, and the reason goes in `CHANGELOG.md`.
+works". Any ✗ is a release blocker, and the reason goes in the README's Changelog.
 
 Some rows are automated and green (marked **auto**); the rest need a human with
 the installer on a real laptop (marked **human**). The auto rows were green on 2026-11-03
@@ -27,7 +27,7 @@ Fill in the Date/Result column when you run a human row.
 
 ## Launch checklist (run once per release, on a clean laptop)
 
-- [ ] Double-click launch: window appears, app icon in the taskbar, **no console window**, no browser tab. (If the taskbar shows a generic window icon instead of the Benchflow mark, note it in `CHANGELOG.md` — the window icon is set by the exe, not by the shell.)
+- [ ] Double-click launch: window appears, app icon in the taskbar, **no console window**, no browser tab. (If the taskbar shows a generic window icon instead of the Benchflow mark, note it in the README's Changelog — the window icon is set by the exe, not by the shell.)
 - [ ] `python.exe` and `node.exe` appear in Task Manager's process list only as `Benchflow.exe` (no separate interpreter).
 - [ ] Nothing listens beyond loopback: `netstat -ano | findstr <port>` shows `127.0.0.1:<port>` only.
 - [ ] First-run import verified against a **copy** of the real data, and the web app's own data folder is byte-for-byte unchanged afterwards (`git status` in the web repo stays clean; compare file hashes).
@@ -53,4 +53,4 @@ Fill in the Date/Result column when you run a human row.
   `%LOCALAPPDATA%\Benchflow\desktop.lock` left in place. The automated half of that is
   `test_an_empty_lock_file_does_not_wedge_startup`; the human half is watching the window actually
   open on a machine where something killed the app.
-- [ ] `CHANGELOG.md` has an entry for the version, with every ✗ from the table above spelled out.
+- [ ] The README's Changelog has an entry for the version, with every ✗ from the table above spelled out.

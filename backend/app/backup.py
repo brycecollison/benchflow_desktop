@@ -43,6 +43,7 @@ from typing import Dict, Iterable, List, Optional
 
 from sqlmodel import Session, create_engine
 
+from app.models import NOTEBOOK_SCHEMA_VERSION
 from app.sharepoint_export import APP_VERSION, extract_refs
 
 HISTORY_KEEP = 14
@@ -297,6 +298,20 @@ def _has_records(db_path: Path) -> bool:
         con.close()
 
 
+def _user_version(db_path: Path) -> int:
+    """The notebook schema version (PRAGMA user_version; app/models.py NOTEBOOK_SCHEMA_VERSION)."""
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return 0
+    try:
+        return con.execute("PRAGMA user_version").fetchone()[0]
+    except sqlite3.Error:
+        return 0
+    finally:
+        con.close()
+
+
 def _file_names(folder: Path) -> List[str]:
     """Relative names of every file under folder, subfolders included (attachments can nest)."""
     return [str(p.relative_to(folder)) for p in sorted(folder.rglob("*")) if p.is_file()] \
@@ -385,6 +400,10 @@ def sync_pull(db_path: Path, uploads_dir: Path, dest: Path) -> Dict:
     if remote_fp == last_fp or remote_fp == local_fp:
         _write_sync_state(db_path, remote_fp, dest, "up-to-date")
         return {"action": "up-to-date"}
+    if _user_version(remote) > NOTEBOOK_SCHEMA_VERSION:
+        # an older build would silently drop what it does not know (block ids, sync records) on save
+        raise ValueError("The OneDrive folder's notebook was saved by a newer version of Benchflow. "
+                         "Update this app (Settings > Updates), then reopen it to take that notebook.")
     if local_fp is not None and local_fp != last_fp and _has_records(db_path):
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         kept = db_path.parent / f"benchflow-conflict-{stamp}.db"

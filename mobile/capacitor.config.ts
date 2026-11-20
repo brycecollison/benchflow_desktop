@@ -5,8 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Benchflow Companion',
   webDir: 'dist',
   plugins: {
-    // Native HTTP for fetch: the Microsoft token endpoint rejects browser-origin (CORS) code
-    // redemption for non-SPA apps, and the LAN probe needs to reach a plain http:// host.
+    // Native HTTP: the desktop's sync app sends no CORS headers (it is not a website).
     CapacitorHttp: { enabled: true },
   },
 };
