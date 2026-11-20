@@ -9,7 +9,7 @@
 #
 # Needs: Node (for the UI), this repo's venv with pyinstaller, and Inno Setup 6 for the installer
 # (iscc.exe on PATH, or point $env:ISCC at it). The phone app also needs JDK 21 and the Android SDK
-# (mobileuild-apk.ps1).
+# (mobile\build-apk.ps1).
 param(
     [switch]$Seed,
     [string]$WebRepo = "",
@@ -51,7 +51,7 @@ if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }
 
 if (-not $SkipAndroid) {
     Write-Host "`n=== the phone app (APK, bundled into the exe) ===" -ForegroundColor Cyan
-    & (Join-Path $root "mobileuild-apk.ps1")
+    & (Join-Path $root "mobile\build-apk.ps1")
     if ($LASTEXITCODE -ne 0) { throw "APK build failed - fix it, or pass -SkipAndroid to ship without the phone app" }
 }
 

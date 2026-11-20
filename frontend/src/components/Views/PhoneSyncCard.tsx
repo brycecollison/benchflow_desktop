@@ -83,7 +83,7 @@ export const PhoneSyncCard: React.FC = () => {
           <div className="space-y-2 pb-3 border-b border-[var(--line)]">
             <p className="m-0 font-semibold">Install the phone app (Android, USB)</p>
             {!android.apk && (
-              <p className="m-0 text-[var(--mut)]">This build does not include the phone app. Build it with mobileuild-apk.ps1,
+              <p className="m-0 text-[var(--mut)]">This build does not include the phone app. Build it with mobile\build-apk.ps1,
                 or install a release that includes it.</p>
             )}
             {android.apk && !android.adb && (

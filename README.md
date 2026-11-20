@@ -78,9 +78,9 @@ key of the computer that built it**. If the phone has the app from a build signe
 computer, Android refuses the in-place update and the installer says so: sync the phone, uninstall
 the app on it (anything not yet synced is lost), and install again.
 
-**Building the APK** (`mobileuild-apk.ps1`, run by `packaginguild.ps1` unless `-SkipAndroid`)
+**Building the APK** (`mobile\build-apk.ps1`, run by `packaging\build.ps1` unless `-SkipAndroid`)
 needs Node, JDK 21 (`JAVA_HOME`) and the Android SDK (`ANDROID_HOME`, or the Android Studio default).
-It writes `buildndroidenchflow-companion.apk`, which the exe build bundles. A build without it
+It writes `build\android\benchflow-companion.apk`, which the exe build bundles. A build without it
 says so in Settings instead of offering the install.
 
 ## Moving a notebook in from the web app
@@ -591,7 +591,7 @@ update every PC that shares a notebook through OneDrive before using it.
 
 - Settings > Phone sync installs the Android app on a phone plugged in over USB, with `adb` found on
   this PC or downloaded once from Google. `Benchflow.exe --install-android`, `install-android.ps1`
-  and `mobileuild-apk.ps1` do the same from a terminal. The installer build bundles the APK.
+  and `mobile\build-apk.ps1` do the same from a terminal. The installer build bundles the APK.
 
 #### Development
 
