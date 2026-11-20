@@ -892,9 +892,9 @@ export const CalendarView: React.FC = () => {
           className={`group relative h-[22px] min-h-[22px] py-0.5 px-1.5 rounded-md border text-left cursor-grab active:cursor-grabbing transition-all select-none flex items-center gap-1.5 shadow-3xs hover:shadow-xs hover:border-[var(--acc)] ${isResizing ? 'pointer-events-none' : 'pointer-events-auto'} ${
             meta.colorTheme.bg
           } ${meta.colorTheme.border} ${
-            !item.isStart ? 'rounded-l-none border-l-0 border-dashed !ml-0' : 'ml-1'
+            !item.isStart ? 'rounded-l-none border-l-0 !ml-0' : 'ml-1'
           } ${
-            !item.isEnd ? 'rounded-r-none border-r-0 border-dashed !mr-0' : 'mr-1'
+            !item.isEnd ? 'rounded-r-none border-r-0 !mr-0' : 'mr-1'
           } ${
             reorderPos ? 'ring-2 ring-[var(--acc)] shadow-md z-30' : ''
           }`}
@@ -1093,9 +1093,9 @@ export const CalendarView: React.FC = () => {
         className={`group relative min-w-0 h-auto min-h-[62px] py-2 px-2.5 rounded-xl border text-left cursor-grab active:cursor-grabbing transition-all select-none flex flex-col justify-between gap-1.5 shadow-2xs hover:shadow-md hover:border-[var(--acc)] ${isResizing ? 'pointer-events-none' : 'pointer-events-auto'} ${
           meta.colorTheme.bg
         } ${meta.colorTheme.border} ${
-          !item.isStart ? 'rounded-l-none border-l-0 border-dashed !ml-0' : 'ml-1.5'
+          !item.isStart ? 'rounded-l-none border-l-0 !ml-0' : 'ml-1.5'
         } ${
-          !item.isEnd ? 'rounded-r-none border-r-0 border-dashed !mr-0' : 'mr-1.5'
+          !item.isEnd ? 'rounded-r-none border-r-0 !mr-0' : 'mr-1.5'
         } ${
           reorderPos ? 'ring-2 ring-[var(--acc)] shadow-md z-30' : ''
         }`}
@@ -1329,7 +1329,7 @@ export const CalendarView: React.FC = () => {
             <button
               type="button"
               onClick={() => setViewMode('month')}
-              className={`!px-2.5 !py-1 text-xs font-medium rounded-md transition-all cursor-pointer ${
+              className={`cal-ctl !px-2.5 text-xs font-medium rounded-md transition-all cursor-pointer ${
                 viewMode === 'month'
                   ? 'bg-[var(--card)] text-[var(--ink)] shadow-xs font-semibold'
                   : 'text-[var(--mut)] hover:text-[var(--ink)]'
@@ -1340,7 +1340,7 @@ export const CalendarView: React.FC = () => {
             <button
               type="button"
               onClick={() => setViewMode('week')}
-              className={`!px-2.5 !py-1 text-xs font-medium rounded-md transition-all cursor-pointer ${
+              className={`cal-ctl !px-2.5 text-xs font-medium rounded-md transition-all cursor-pointer ${
                 viewMode === 'week'
                   ? 'bg-[var(--card)] text-[var(--ink)] shadow-xs font-semibold'
                   : 'text-[var(--mut)] hover:text-[var(--ink)]'
@@ -1353,14 +1353,14 @@ export const CalendarView: React.FC = () => {
               type="button"
               onClick={handlePrev}
               title={viewMode === 'month' ? 'Previous Month' : 'Previous Week'}
-              className="!p-1 rounded-md hover:bg-[var(--card)] text-[var(--mut)] hover:text-[var(--ink)] cursor-pointer"
+              className="cal-ctl !px-1 rounded-md hover:bg-[var(--card)] text-[var(--mut)] hover:text-[var(--ink)] cursor-pointer"
             >
               <ChevronLeft size={16} />
             </button>
             <button
               type="button"
               onClick={handleToday}
-              className="!px-2 !py-0.5 text-xs font-medium rounded-md hover:bg-[var(--card)] text-[var(--ink)] cursor-pointer"
+              className="cal-ctl !px-2 text-xs font-medium rounded-md hover:bg-[var(--card)] text-[var(--ink)] cursor-pointer"
             >
               Today
             </button>
@@ -1368,7 +1368,7 @@ export const CalendarView: React.FC = () => {
               type="button"
               onClick={handleNext}
               title={viewMode === 'month' ? 'Next Month' : 'Next Week'}
-              className="!p-1 rounded-md hover:bg-[var(--card)] text-[var(--mut)] hover:text-[var(--ink)] cursor-pointer"
+              className="cal-ctl !px-1 rounded-md hover:bg-[var(--card)] text-[var(--mut)] hover:text-[var(--ink)] cursor-pointer"
             >
               <ChevronRight size={16} />
             </button>
@@ -1384,15 +1384,15 @@ export const CalendarView: React.FC = () => {
           {/* Right: Calendar Filters (Phase toggles, Project filter, Search, Backlog toggle) */}
           <div className="flex items-center gap-1.5 min-w-0 ml-auto">
             {/* Calendar Phase Filter */}
-            <div className="shrink-0">{renderPhaseFilter(calPhases, setCalPhases)}</div>
+            <div className="cal-phase shrink-0">{renderPhaseFilter(calPhases, setCalPhases)}</div>
 
             {/* Calendar Project Filter */}
-            <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--line)] rounded-lg px-2 py-1 text-xs min-w-0">
-              <Folder size={12} className="text-[var(--mut)]" />
+            <>
+              <Folder size={12} className="text-[var(--mut)] shrink-0" />
               <select
                 value={calProjectId}
                 onChange={(e) => setCalProjectId(e.target.value)}
-                className="bg-transparent text-[11px] font-medium text-[var(--ink)] outline-hidden cursor-pointer border-none w-full min-w-0 max-w-32"
+                className="cal-ctl field-sizing-content shrink-[0.2] min-w-0 max-w-64 text-[11px] font-medium cursor-pointer"
               >
                 <option value="all">All Projects ({activeProjects.length})</option>
                 {activeProjects.map((p) => (
@@ -1401,17 +1401,17 @@ export const CalendarView: React.FC = () => {
                   </option>
                 ))}
               </select>
-            </div>
+            </>
 
             {/* Calendar Search Box */}
-            <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--line)] rounded-lg px-2 py-1 text-xs w-36 min-w-12 focus-within:w-44 transition-all">
+            <>
               <Search size={12} className="text-[var(--mut)] shrink-0" />
               <input
                 type="text"
                 placeholder="Search calendar..."
                 value={calSearchQuery}
                 onChange={(e) => setCalSearchQuery(e.target.value)}
-                className="bg-transparent text-xs text-[var(--ink)] outline-hidden w-full placeholder:text-[var(--mut)]"
+                className="cal-ctl w-44 shrink-[0.2] min-w-12 text-xs placeholder:text-[var(--mut)]"
               />
               {calSearchQuery && (
                 <button
@@ -1422,14 +1422,14 @@ export const CalendarView: React.FC = () => {
                   <X size={11} />
                 </button>
               )}
-            </div>
+            </>
 
             {/* Expand button only while the backlog is collapsed; the open backlog has its own collapse button */}
             {!isTrayOpen && (
               <button
                 type="button"
                 onClick={toggleTrayOpen}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border font-medium transition-all cursor-pointer shrink-0 bg-[var(--bg)] border-[var(--line)] text-[var(--mut)] hover:text-[var(--ink)]"
+                className="cal-ctl flex items-center gap-1.5 px-2.5 text-xs rounded-lg border font-medium transition-all cursor-pointer shrink-0 bg-[var(--bg)] border-[var(--line)] text-[var(--mut)] hover:text-[var(--ink)]"
                 title="Expand Unscheduled Backlog"
               >
                 <PanelRightOpen size={14} />

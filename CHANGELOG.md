@@ -3,6 +3,34 @@
 Dates are the day the work was checked against a build, not the day it was written.
 The web app is the reference implementation — see `UPSTREAM.md` for which commit was vendored.
 
+## 1.0.3 — 2026-11-19 — editor sections, PDFs and highlight colors
+
+Installing over 1.0.2 keeps your notebook; the app adds two empty columns for the new sections on
+first start.
+
+### Experiment editor
+
+- New **Figures** and **Future Directions** sections (after Results, before Notes) on every
+  experiment, included in search and the MCP/notebook queries.
+- PDFs can be embedded inline: use the image button, paste, or drop a PDF into a section and it
+  shows as a scrollable viewer with an Open link. Saved as a Markdown image line.
+- Six highlight colors (yellow, green, blue, pink, orange, purple) in the toolbar and the
+  selection menu. Existing highlights stay yellow.
+- Fixed: pressing Enter in a section that contains a lone image (Results, Data Acquisition) threw
+  an error and the new line vanished.
+
+### Calendar
+
+- Navigation controls sit left of the date range so they no longer move when the date text changes
+  width. All top-bar controls share one height; the search box shows its full placeholder and
+  shrinks on narrow windows; the project selector is sized to its selection.
+- The sidebar badge also counts custom phases. Phase bars that continue past a row no longer have
+  dashed borders.
+
+### Flow chart
+
+- The Active quick filter is available in a project's flow chart view.
+
 ## 1.0.2 — 2026-11-17 — calendar and flow chart cleanup
 
 No notebook or sync changes; installing over 1.0.1 keeps everything where it is.

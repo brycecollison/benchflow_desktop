@@ -12,7 +12,7 @@ import { promptDialog, alertDialog } from '../../store/useDialogStore';
 import { InlineMath, BlockMath } from './MathExtension';
 import { FontSize, createFontSizeStarterKit, FONT_SIZES } from './FontSizeExtension';
 import { PdfEmbed } from './PdfEmbedExtension';
-import { Highlight } from './HighlightExtension';
+import { Highlight, HIGHLIGHT_COLORS, type HighlightColor } from './HighlightExtension';
 import { indentSelectedLines, sinkListItemAcrossMath } from '../../utils/editorIndentation';
 import './SectionTextEditor.css';
 
@@ -169,7 +169,7 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
     editor,
     selector: ({ editor: current }) => current ? {
       bold: current.isActive('bold'), italic: current.isActive('italic'), underline: current.isActive('underline'),
-      highlight: current.isActive('highlight'), strike: current.isActive('strike'), bullet: current.isActive('bulletList'), ordered: current.isActive('orderedList'),
+      highlight: current.isActive('highlight'), highlightColor: current.getAttributes('highlight').color || '', strike: current.isActive('strike'), bullet: current.isActive('bulletList'), ordered: current.isActive('orderedList'),
       quote: current.isActive('blockquote'), code: current.isActive('codeBlock'), link: current.isActive('link'),
       heading: [1, 2, 3].find((level) => current.isActive('heading', { level })) || 0,
       fontSize: current.getAttributes('fontSize').size || '',
@@ -256,6 +256,17 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
       {FONT_SIZES.map((size) => <option key={size} value={size}>{size} px</option>)}
     </select>
   );
+  const renderHighlightColors = () => (
+    <span role="group" aria-label="Highlight color" className="inline-flex items-center gap-1 px-1">
+      {(Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((color) => (
+        <button key={color} type="button" aria-label={`Highlight ${color}`} title={`Highlight ${color}`} aria-pressed={state.highlightColor === color}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => state.highlightColor === color ? editor.chain().focus().unsetMark('highlight').run() : editor.chain().focus().setMark('highlight', { color }).run()}
+          style={{ backgroundColor: HIGHLIGHT_COLORS[color] }}
+          className={`!w-4 !h-4 !p-0 !rounded-full !border ${state.highlightColor === color ? '!border-[var(--ink)]' : '!border-transparent'}`} />
+      ))}
+    </span>
+  );
   const renderTool = (tool: (typeof tools)[number]) => (
     <button key={tool.label} type="button" aria-label={tool.label} title={tool.label} aria-pressed={tool.active} disabled={tool.disabled}
       onMouseDown={(event) => event.preventDefault()} onClick={tool.run}
@@ -279,6 +290,7 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
         </select>
         {renderFontSize()}
         {tools.map((tool) => renderTool(tool))}
+        {renderHighlightColors()}
         <input ref={imageInput} type="file" accept="image/*,application/pdf" multiple className="hidden" aria-label={`Insert images into ${label}`} onChange={(event) => {
           const files = Array.from(event.currentTarget.files || []);
           event.currentTarget.value = '';
@@ -302,6 +314,7 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
         className="z-50 flex flex-wrap items-center gap-1 max-w-[calc(100vw-16px)] p-1 rounded-md border border-[var(--line)] bg-[var(--bg)] shadow-lg">
         {renderFontSize()}
         {tools.filter((tool) => ['Bold', 'Italic', 'Underline', 'Strikethrough', 'Highlight', 'Link', 'Clear formatting'].includes(tool.label)).map(renderTool)}
+        {renderHighlightColors()}
       </BubbleMenu>}
       <EditorContent editor={editor} onClick={(event) => {
         const button = (event.target as Element).closest('[data-enlarge-image]');

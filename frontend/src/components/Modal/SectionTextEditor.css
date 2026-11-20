@@ -23,6 +23,11 @@
 .section-document pre { background: var(--bg); padding: 12px; border-radius: 6px; white-space: pre-wrap; }
 .section-document code { background: var(--bg); font-family: monospace; }
 .section-document mark { background: #fde047; color: #1f2937; }
+.section-document mark[data-color=green] { background: #86efac; }
+.section-document mark[data-color=blue] { background: #93c5fd; }
+.section-document mark[data-color=pink] { background: #f9a8d4; }
+.section-document mark[data-color=orange] { background: #fdba74; }
+.section-document mark[data-color=purple] { background: #d8b4fe; }
 .section-document a { color: var(--acc); text-decoration: underline; }
 .section-document hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
 .section-document table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: 1em 0; }
