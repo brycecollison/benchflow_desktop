@@ -570,9 +570,11 @@ write in; the OneDrive backup is what carries a notebook between machines.
 Dates are the day the work was checked against a build, not the day it was written.
 The web app is the reference implementation — see `UPSTREAM.md` for which commit was vendored.
 
-### Unreleased — Android companion
+### 1.1.0 — 2026-11-20 — Android companion and phone sync
 
 Phone sync over Tailscale (`docs/adr/0002-mobile-sync.md`), and the phone app itself (`mobile/`).
+Includes everything in 1.0.3. The notebook is upgraded once on first start (see Notebook below), so
+update every PC that shares a notebook through OneDrive before using it.
 
 #### Notebook
 
@@ -629,6 +631,34 @@ Phone sync over Tailscale (`docs/adr/0002-mobile-sync.md`), and the phone app it
   TIFFs are not downloaded, only the previews the notebook shows.
 - If the phone and the computer changed the same paragraph, the computer's text is kept and the
   phone's is set aside as a conflict, shown on both.
+
+### 1.0.3 — 2026-11-19 — editor sections, PDFs and highlight colors
+
+Installing over 1.0.2 keeps your notebook; the app adds two empty columns for the new sections on
+first start.
+
+#### Experiment editor
+
+- New **Figures** and **Future Directions** sections (after Results, before Notes) on every
+  experiment, included in search and the MCP/notebook queries.
+- PDFs can be embedded inline: use the image button, paste, or drop a PDF into a section and it
+  shows as a scrollable viewer with an Open link. Saved as a Markdown image line.
+- Six highlight colors (yellow, green, blue, pink, orange, purple) in the toolbar and the
+  selection menu. Existing highlights stay yellow.
+- Fixed: pressing Enter in a section that contains a lone image (Results, Data Acquisition) threw
+  an error and the new line vanished.
+
+#### Calendar
+
+- Navigation controls sit left of the date range so they no longer move when the date text changes
+  width. All top-bar controls share one height; the search box shows its full placeholder and
+  shrinks on narrow windows; the project selector is sized to its selection.
+- The sidebar badge also counts custom phases. Phase bars that continue past a row no longer have
+  dashed borders.
+
+#### Flow chart
+
+- The Active quick filter is available in a project's flow chart view.
 
 ### 1.0.2 — 2026-11-17 — calendar and flow chart cleanup
 

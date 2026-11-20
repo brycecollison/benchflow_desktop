@@ -769,6 +769,8 @@ export const useLabStore = create<LabStore>((set, get) => ({
       dataAnalysisDuration: '',
       dataAnalysisCompleted: false,
       results: '',
+      figures: '',
+      futureDirections: '',
       notes: '',
       blocks: [],
       ...(phases !== undefined ? { phases } : {}),

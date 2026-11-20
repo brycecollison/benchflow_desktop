@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 
 STANDARD_SECTIONS = {
     "purpose", "expectedResults", "experimentalDesign", "experimentalProtocol",
-    "dataAcquisition", "dataAnalysis", "results", "notes",
+    "dataAcquisition", "dataAnalysis", "results", "figures", "futureDirections", "notes",
 }
 STANDARD_PHASES = {"experimentalProtocol", "dataAcquisition", "dataAnalysis"}
 
@@ -103,6 +103,8 @@ class Experiment(BaseModel):
     dataAnalysisEndDate: Optional[str] = ""
     results: Optional[str] = ""
     notes: Optional[str] = ""
+    figures: Optional[str] = ""
+    futureDirections: Optional[str] = ""
     phases: Optional[List[str]] = None
     customPhases: Optional[List[CustomPhase]] = None
     blocks: List[Block] = []

@@ -58,6 +58,8 @@ def init_db():
             "data_analysis_start_date": "TEXT DEFAULT ''",
             "data_analysis_end_date": "TEXT DEFAULT ''",
             "results": "TEXT DEFAULT ''",
+            "figures": "TEXT DEFAULT ''",
+            "future_directions": "TEXT DEFAULT ''",
             "phases": "JSON DEFAULT NULL",
             "custom_phases": "JSON DEFAULT NULL",
             "deviations": "JSON DEFAULT NULL",

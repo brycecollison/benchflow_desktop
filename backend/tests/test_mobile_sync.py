@@ -223,6 +223,20 @@ def test_phone_may_not_edit_structure(db):
         assert s.exec(select(SyncConflictDB)).one().source == "rejected"  # parked, not dropped
 
 
+def test_figures_and_future_directions_survive_saves_and_phone_edits(db):
+    """The two sections added in 1.0.3: a window save keeps them, and the phone can edit them."""
+    engine, path = db
+    with Session(engine) as s:
+        loaded = _state(s)
+        _window_save(s, loaded, {"e1": {"figures": "![f](/uploads/f.png)", "futureDirections": "repeat n=3"}}, loaded["rev"])
+        e1 = _exp_of(_state(s), "e1")
+        assert (e1["figures"], e1["futureDirections"]) == ("![f](/uploads/f.png)", "repeat n=3")
+        longer = "repeat n=3" + chr(10) * 2 + "and n=4"
+        r = service.apply_ops(s, "phone-1", [_op("o1", "futureDirections", "repeat n=3", longer)], path)
+        assert r["results"][0]["result"] == "applied"
+        assert _exp_of(_state(s), "e1")["futureDirections"] == longer
+
+
 def test_phone_block_and_deviation(db):
     engine, path = db
     dev = [{"id": "d1", "at": "2026-01-01T10:00:00Z", "device_id": "phone-1", "text": "spun 5 min longer"}]

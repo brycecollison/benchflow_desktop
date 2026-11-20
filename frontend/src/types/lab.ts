@@ -5,7 +5,7 @@ export type PriorityLevel = 'High' | 'Med' | 'Low' | '';
 
 export type ExperimentSectionKey =
   | 'purpose' | 'expectedResults' | 'experimentalDesign'
-  | WorkflowPhaseKey | 'results' | 'notes';
+  | WorkflowPhaseKey | 'results' | 'figures' | 'futureDirections' | 'notes';
 
 interface SectionAttachment {
   id?: string; // stable block id (mobile sync merges blocks by id); the server fills a missing one
@@ -72,6 +72,8 @@ export interface Experiment {
   dataAnalysisStartDate?: string;
   dataAnalysisEndDate?: string;
   results?: string;
+  figures?: string;
+  futureDirections?: string;
   notes?: string;
   blocks: ELNBlock[];
   /** Append-only deviation log per phase key (phone and desktop entries merge by id). */

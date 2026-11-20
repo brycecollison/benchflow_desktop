@@ -100,7 +100,7 @@ export const Sidebar: React.FC = () => {
     (acc, p) =>
       acc +
       p.exps.reduce((eAcc, e) => {
-        const dates = [e.experimentalProtocolStartDate, e.dataAcquisitionStartDate, e.dataAnalysisStartDate];
+        const dates = [e.experimentalProtocolStartDate, e.dataAcquisitionStartDate, e.dataAnalysisStartDate, ...(e.customPhases || []).map((phase) => phase.startDate)];
         const count = dates.filter((date) => {
           const start = toIsoDay(date || '');
           return start && start >= today;

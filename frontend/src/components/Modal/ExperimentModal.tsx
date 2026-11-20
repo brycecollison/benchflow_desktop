@@ -148,6 +148,26 @@ const SECTIONS: SectionConfig[] = [
     minHeight: 'min-h-[120px]',
   },
   {
+    key: 'figures',
+    label: 'Figures',
+    subtitle: 'Final figures and legends for presentations and manuscripts',
+    icon: <BarChart3 size={14} />,
+    badgeClass: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/30',
+    badgeTextClass: 'text-sky-600 dark:text-sky-400',
+    placeholder: 'Embed figures and write their legends…',
+    minHeight: 'min-h-[100px]',
+  },
+  {
+    key: 'futureDirections',
+    label: 'Future Directions',
+    subtitle: 'Follow-up experiments, open questions & next steps',
+    icon: <StickyNote size={14} />,
+    badgeClass: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/30',
+    badgeTextClass: 'text-violet-600 dark:text-violet-400',
+    placeholder: 'Describe follow-up experiments, open questions, and next steps…',
+    minHeight: 'min-h-[100px]',
+  },
+  {
     key: 'notes',
     label: 'Notes',
     subtitle: 'Real-time bench observations, lot/batch numbers, deviations & remarks',
@@ -392,7 +412,7 @@ const ExperimentEditor: React.FC<ExperimentEditorProps> = ({ experimentId: activ
     ['purpose', 'expectedResults', 'experimentalDesign'].includes(s.key)
   );
   const outroSections = SECTIONS.filter((s) =>
-    ['results', 'notes'].includes(s.key)
+    ['results', 'figures', 'futureDirections', 'notes'].includes(s.key)
   );
 
   const workflowSections: SectionConfig[] = includedPhases.map((pk) => {
@@ -502,7 +522,7 @@ const ExperimentEditor: React.FC<ExperimentEditorProps> = ({ experimentId: activ
     if (!currentProject || !currentExp) return;
     if (['experimentalProtocol', 'dataAcquisition', 'dataAnalysis'].includes(key)) {
       updateExperiment(currentProject.id, currentExp.id, { [key]: value });
-    } else if (['purpose', 'expectedResults', 'experimentalDesign', 'results', 'notes'].includes(key)) {
+    } else if (['purpose', 'expectedResults', 'experimentalDesign', 'results', 'figures', 'futureDirections', 'notes'].includes(key)) {
       updateExperiment(currentProject.id, currentExp.id, { [key]: value });
     } else {
       updatePhase(currentProject.id, currentExp.id, key, { content: value });
@@ -978,6 +998,13 @@ const ExperimentEditor: React.FC<ExperimentEditorProps> = ({ experimentId: activ
                           onUploadImage={async (file) => {
                             const { uploadMediaFile, addBlock } = useLabStore.getState();
                             const uploaded = await uploadMediaFile(file);
+                            if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
+                              addBlock(currentProject.id, currentExp.id, {
+                                type: 'file', name: file.name, src: uploaded.raw_url || uploaded.url,
+                                mimeType: 'application/pdf', size: uploaded.size, ...sectionOwnership(sec.key),
+                              });
+                              return uploaded.raw_url || uploaded.url;
+                            }
                             addBlock(currentProject.id, currentExp.id, {
                               type: 'img', name: file.name, src: uploaded.url, preview_url: uploaded.preview_url,
                               raw_url: uploaded.raw_url, metadata: uploaded.metadata, format: uploaded.format,

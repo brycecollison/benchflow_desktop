@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 TEXT_FIELDS = {
     "purpose", "expectedResults", "experimentalDesign", "experimentalProtocol",
-    "dataAcquisition", "dataAnalysis", "results", "notes",
+    "dataAcquisition", "dataAnalysis", "results", "figures", "futureDirections", "notes",
 }
 _BUILTIN_PHASES = ("experimentalProtocol", "dataAcquisition", "dataAnalysis")
 _PHASE_META = ("Duration", "Completed", "StartDate", "EndDate")

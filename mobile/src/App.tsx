@@ -295,7 +295,7 @@ function PhaseSection({ repo, exp, phaseKey, editorProps }: {
 type EditorProps = { toolbarTarget: HTMLDivElement | null; toolbarActive: boolean; onActivate: () => void; onEditor: (e: unknown) => void };
 
 const SECTIONS: [string, string][] = [['purpose', 'Purpose'], ['expectedResults', 'Expected results'], ['experimentalDesign', 'Experimental design']];
-const AFTER: [string, string][] = [['results', 'Results'], ['notes', 'Notes']];
+const AFTER: [string, string][] = [['results', 'Results'], ['figures', 'Figures'], ['futureDirections', 'Future Directions'], ['notes', 'Notes']];
 
 /** The whole experiment, like the desktop's continuous editor. Opened from a phase, it starts
  * scrolled to that phase, with the rest of the experiment above and below for reference. */

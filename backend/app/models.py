@@ -64,6 +64,8 @@ class ExperimentDB(SQLModel, table=True):
     data_analysis_end_date: Optional[str] = Field(default="")
     results: Optional[str] = Field(default="")
     notes: Optional[str] = Field(default="")
+    figures: Optional[str] = Field(default="")
+    future_directions: Optional[str] = Field(default="")
     phases: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
     custom_phases: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
     blocks: List[Dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
@@ -149,7 +151,8 @@ EXP_FIELDS = [
                        ("dataAcquisition", "data_acquisition"), ("dataAnalysis", "data_analysis"))
       for suffix, col_suffix in (("", ""), ("Duration", "_duration"), ("Completed", "_completed"),
                                  ("StartDate", "_start_date"), ("EndDate", "_end_date"))],
-    ("results", "results"), ("notes", "notes"), ("phases", "phases"),
+    ("results", "results"), ("figures", "figures"), ("futureDirections", "future_directions"),
+    ("notes", "notes"), ("phases", "phases"),
     ("customPhases", "custom_phases"), ("blocks", "blocks"), ("deviations", "deviations"),
     ("px", "px"), ("py", "py"),
 ]

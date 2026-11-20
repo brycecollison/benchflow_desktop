@@ -5,6 +5,8 @@ const NON_WORKFLOW_SECTIONS = new Set([
   'expectedResults',
   'experimentalDesign',
   'results',
+  'figures',
+  'futureDirections',
   'notes',
 ]);
 

@@ -40,7 +40,7 @@ from app.models import ExperimentDB
 
 SCHEMA_VERSION = 1
 # App version recorded in the manifest; keep in sync with the FastAPI title version.
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.1.0"
 # Headroom below SharePoint's hard 250 MB per-file sync limit.
 SIZE_LIMIT = 200 * 1024 * 1024
 # SharePoint file names: max 50 chars (extension separate, max 7). Keep margin.
@@ -107,7 +107,7 @@ def refs_from_text(text: Optional[str]) -> Set[str]:
 
 _SCAN_COLS = (
     "purpose", "expected_results", "experimental_design", "experimental_protocol",
-    "data_acquisition", "data_analysis", "results", "notes",
+    "data_acquisition", "data_analysis", "results", "figures", "future_directions", "notes",
     "blocks", "custom_phases", "phases",
 )
 

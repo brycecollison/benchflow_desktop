@@ -6,7 +6,7 @@ import type { Experiment } from '../../frontend/src/types/lab.ts';
 export type Units = Record<string, unknown>;
 
 const ORDER_UNITS = new Set(['blocks:order', 'customPhases:order']);
-const TEXT = ['purpose', 'expectedResults', 'experimentalDesign', 'experimentalProtocol', 'dataAcquisition', 'dataAnalysis', 'results', 'notes'];
+const TEXT = ['purpose', 'expectedResults', 'experimentalDesign', 'experimentalProtocol', 'dataAcquisition', 'dataAnalysis', 'results', 'figures', 'futureDirections', 'notes'];
 const PHONE_FIELDS = new Set([
   ...TEXT, 'name', 'status',
   ...['experimentalProtocol', 'dataAcquisition', 'dataAnalysis'].flatMap((p) => ['Duration', 'Completed', 'StartDate', 'EndDate'].map((m) => p + m)),
