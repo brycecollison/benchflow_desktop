@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Cloud, HardDrive, Save, RefreshCw, Download, TriangleAlert } from 'lucide-react';
 import { useUpdateStore } from '../../store/useUpdateStore';
+import { PhoneSyncCard } from './PhoneSyncCard';
 
 interface LastBackup {
   at: string;
@@ -219,6 +220,8 @@ export const SettingsView: React.FC = () => {
             )}
           </div>
         </div>
+
+        <PhoneSyncCard />
 
         {health && (
           <div className="rounded-lg border border-[var(--line)] overflow-hidden max-w-xl">

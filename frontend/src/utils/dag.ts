@@ -165,7 +165,20 @@ export function matchesFilter(e: Experiment, filter: Partial<FilterState> | any)
     }
   }
 
+  // 4. Deviations Filter ('yes' = at least one logged deviation)
+  const deviationValues: string[] = Array.isArray(filter.deviations) ? filter.deviations : [];
+  if (deviationValues.length > 0) {
+    const matches = deviationValues.includes(hasDeviations(e) ? 'yes' : 'no');
+    if (filter.deviationsNot ? matches : !matches) {
+      return false;
+    }
+  }
+
   return true;
+}
+
+export function hasDeviations(e: Experiment): boolean {
+  return Object.values(e.deviations || {}).some((entries) => entries.length > 0);
 }
 
 export interface LayoutOptions {

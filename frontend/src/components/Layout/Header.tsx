@@ -23,6 +23,7 @@ import {
 import { ProjectPapersModal } from '../Modal/ProjectPapersModal';
 import { confirmDialog, promptDialog } from '../../store/useDialogStore';
 import { promptCreateExperiment } from '../../utils/experimentCreation';
+import { hasDeviations } from '../../utils/dag';
 import {
   UnifiedFilterDropdown,
   type FilterCategoryConfig,
@@ -233,6 +234,20 @@ export const Header: React.FC = () => {
       onSetValues: (values) => setFilterValues('priority', values),
       onToggleNot: () => toggleFilterNot('priority'),
       onClear: () => clearFilter('priority'),
+    },
+    {
+      id: 'deviations',
+      title: 'Deviations',
+      options: [
+        { id: 'yes', label: 'Has deviations', count: relevantExps.filter(hasDeviations).length },
+        { id: 'no', label: 'No deviations', count: relevantExps.filter((e) => !hasDeviations(e)).length },
+      ],
+      selectedValues: filters.deviations,
+      isNot: filters.deviationsNot,
+      onToggleValue: (id) => toggleFilterValue('deviations', id),
+      onSetValues: (values) => setFilterValues('deviations', values),
+      onToggleNot: () => toggleFilterNot('deviations'),
+      onClear: () => clearFilter('deviations'),
     },
     ...(view.type !== 'pp'
       ? [

@@ -180,6 +180,7 @@ export const GlobalDialogModal: React.FC = () => {
               <input
                 ref={inputRef}
                 type="text"
+                autoCapitalize="off" // on a phone keyboard: links and LaTeX must not start with a capital
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 placeholder={options.placeholder || ''}

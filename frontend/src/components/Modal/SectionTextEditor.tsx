@@ -27,13 +27,15 @@ interface Props {
   toolbarActive: boolean;
   onActivate: () => void;
   onEnlargeImage: (src: string, name: string) => void;
+  /** The phone app adds its own buttons (timestamp) that act on this editor. */
+  onEditor?: (editor: Editor) => void;
 }
 
 const containsMath = (node: JSONContent): boolean =>
   node.type === 'inlineMath' || node.type === 'blockMath' || (node.content?.some(containsMath) ?? false);
 
 /** Markdown keeps rich content readable/editable in the existing popup and exports. */
-export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onUploadImage, toolbarTarget, toolbarActive, onActivate, onEnlargeImage }) => {
+export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onUploadImage, toolbarTarget, toolbarActive, onActivate, onEnlargeImage, onEditor }) => {
   const lastValue = useRef(value);
   const imageInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -173,6 +175,8 @@ export const SectionTextEditor: React.FC<Props> = ({ label, value, onChange, onU
       table: current.isActive('table'), undo: current.can().undo(), redo: current.can().redo(),
     } : null,
   });
+
+  useEffect(() => { if (editor && onEditor) onEditor(editor); }, [editor, onEditor]);
 
   useEffect(() => {
     if (editor && value !== lastValue.current) {

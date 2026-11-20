@@ -16,6 +16,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { STATUS_COLORS } from '../../utils/colors';
+import { toIsoDay } from '../../utils/schedule';
 import { promptDialog } from '../../store/useDialogStore';
 
 export const Sidebar: React.FC = () => {
@@ -100,10 +101,9 @@ export const Sidebar: React.FC = () => {
       acc +
       p.exps.reduce((eAcc, e) => {
         const dates = [e.experimentalProtocolStartDate, e.dataAcquisitionStartDate, e.dataAnalysisStartDate];
-        // Imported long-form dates are not calendar-compatible scheduled dates.
         const count = dates.filter((date) => {
-          const start = date?.trim() || '';
-          return /^\d{4}-\d{2}-\d{2}$/.test(start) && start >= today;
+          const start = toIsoDay(date || '');
+          return start && start >= today;
         }).length;
         return eAcc + count;
       }, 0),

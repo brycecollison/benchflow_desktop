@@ -307,7 +307,27 @@ def start_server(port: int):
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info", access_log=False))
     thread = threading.Thread(target=server.run, name="uvicorn", daemon=True)
     thread.start()
+    start_sync_server()
     return server, thread
+
+
+_sync_server = None
+
+
+def start_sync_server() -> None:
+    """The phone's sync endpoint (app/mobile_sync/api.py) on its fixed 127.0.0.1 port, for
+    `tailscale serve`. Runs only while the window is open. A taken port means no phone sync this
+    session (uvicorn logs it); the window is unaffected."""
+    global _sync_server
+    import uvicorn
+
+    from app.mobile_sync.api import SYNC_PORT, app as sync_app
+
+    if not SYNC_PORT:
+        return
+    _sync_server = uvicorn.Server(uvicorn.Config(sync_app, host="127.0.0.1", port=SYNC_PORT,
+                                                 log_level="warning", access_log=False))
+    threading.Thread(target=_sync_server.run, name="uvicorn-sync", daemon=True).start()
 
 
 def wait_for_server(port: int, timeout: float = 30.0) -> bool:
@@ -408,6 +428,8 @@ def shutdown(server, thread, lock_handle) -> int:
     dropped (logged) rather than keeping a windowless process alive forever."""
     if server is not None:
         server.should_exit = True
+    if _sync_server is not None:
+        _sync_server.should_exit = True
     if thread is not None:
         thread.join(SHUTDOWN_GRACE_SECONDS)
         if thread.is_alive():

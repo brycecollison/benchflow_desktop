@@ -10,12 +10,11 @@
     "android": "npm run build && cap sync android && cap open android"
   },
   "dependencies": {
+    "@capacitor-community/sqlite": "^8.1.1",
     "@capacitor/android": "^8.6.0",
     "@capacitor/app": "^8.1.2",
-    "@capacitor/browser": "^8.0.5",
     "@capacitor/core": "^8.6.0",
-    "@capacitor/network": "^8.0.1",
-    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/filesystem": "^8.1.5",
     "@tiptap/core": "^3.33.0",
     "@tiptap/extension-image": "^3.33.0",
     "@tiptap/extension-table": "^3.33.0",

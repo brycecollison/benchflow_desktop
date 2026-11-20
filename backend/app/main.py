@@ -27,6 +27,7 @@ from app.db_service import (
     get_lab_state,
     save_lab_state,
     reset_lab_state,
+    changes_since,
     get_setting,
     set_setting,
 )
@@ -305,11 +306,88 @@ def update_state(state: LabState, session: Session = Depends(get_session)):
     # Also write a JSON backup file asynchronously / as secondary safety
     try:
         with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(state.model_dump(), f, indent=2)
+            json.dump(state.model_dump(exclude={"rev", "since", "bases"}), f, indent=2)
     except Exception as e:
         print(f"[WARN] Failed to write JSON backup: {e}")
 
-    return {"status": "success", "updated_at": datetime.now(timezone.utc).isoformat()}
+    result = {"status": "success", "updated_at": datetime.now(timezone.utc).isoformat()}
+    if state.since is not None:  # a merge-aware window: what changed since it last synced, merges included
+        result["changes"] = changes_since(session, state.since)
+    return result
+
+
+@app.get("/api/lab/changes")
+def get_changes(since: int, session: Session = Depends(get_session)):
+    """What changed after rev `since` (phone edits, mostly): the open window polls this."""
+    return changes_since(session, since)
+
+
+# -- phone pairing (the window side; the phone talks to app/mobile_sync/api.py) ----------
+
+@app.post("/api/mobile/pairing")
+def start_pairing(session: Session = Depends(get_session)):
+    """A one-time code the phone trades for its token. Phase 4 shows it as a QR code."""
+    from app.mobile_sync.api import SYNC_PORT
+    from app.mobile_sync.service import new_pairing_code
+
+    return {**new_pairing_code(session), "sync_port": SYNC_PORT}
+
+
+@app.get("/api/mobile/devices")
+def get_mobile_devices(session: Session = Depends(get_session)):
+    from app.mobile_sync.service import public_devices
+
+    return public_devices(session)
+
+
+@app.get("/api/mobile/setup")
+def get_mobile_setup():
+    """Tailscale address of this PC and whether the sync port is published on the tailnet."""
+    from app.mobile_sync.api import SYNC_PORT
+    from app.mobile_sync.service import tailscale_setup
+
+    return {**tailscale_setup(SYNC_PORT), "sync_port": SYNC_PORT}
+
+
+@app.post("/api/mobile/serve")
+def publish_mobile_sync():
+    from app.mobile_sync.api import SYNC_PORT
+    from app.mobile_sync.service import tailscale_publish
+
+    try:
+        return {**tailscale_publish(SYNC_PORT), "sync_port": SYNC_PORT}
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error))
+
+
+class ResolvePayload(BaseModel):
+    choice: str
+
+
+@app.get("/api/sync/conflicts")
+def get_sync_conflicts(session: Session = Depends(get_session)):
+    from app.mobile_sync.service import list_conflicts
+
+    return list_conflicts(session)
+
+
+@app.post("/api/sync/conflicts/{conflict_id}/resolve")
+def resolve_sync_conflict(conflict_id: str, req: ResolvePayload, session: Session = Depends(get_session)):
+    from app.db_service import get_device_id
+    from app.mobile_sync.service import resolve_conflict
+
+    if not resolve_conflict(session, conflict_id, req.choice, get_device_id(session)):
+        raise HTTPException(status_code=404, detail="No such open conflict")
+    return {"status": "resolved"}
+
+
+@app.delete("/api/mobile/devices/{device_id}")
+def revoke_mobile_device(device_id: str, session: Session = Depends(get_session)):
+    from app.mobile_sync.service import revoke
+
+    if not revoke(session, device_id):
+        raise HTTPException(status_code=404, detail="No such device")
+    return {"status": "revoked"}
 
 
 @app.post("/api/lab/reset")

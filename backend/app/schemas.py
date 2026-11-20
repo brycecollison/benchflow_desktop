@@ -8,6 +8,7 @@ STANDARD_SECTIONS = {
 STANDARD_PHASES = {"experimentalProtocol", "dataAcquisition", "dataAnalysis"}
 
 class SectionAttachment(BaseModel):
+    id: Optional[str] = None  # stable block id; the server fills a missing one
     # Unassigned legacy blocks continue to belong to Results.
     section: Optional[str] = None
     phase: Optional[str] = None
@@ -69,6 +70,12 @@ class CustomPhase(BaseModel):
     endDate: Optional[str] = ""
     color: Optional[str] = None
 
+class Deviation(BaseModel):
+    id: str
+    at: str  # ISO timestamp
+    device_id: str = ""
+    text: str = ""
+
 class Experiment(BaseModel):
     id: str
     name: str
@@ -99,6 +106,7 @@ class Experiment(BaseModel):
     phases: Optional[List[str]] = None
     customPhases: Optional[List[CustomPhase]] = None
     blocks: List[Block] = []
+    deviations: Optional[Dict[str, List[Deviation]]] = None  # by phase key
     px: Optional[float] = None
     py: Optional[float] = None
 
@@ -118,6 +126,12 @@ class Project(BaseModel):
 class LabState(BaseModel):
     projects: List[Project] = []
     papers: List[Paper] = []
+    # GET: the notebook rev this state was read at.
+    rev: Optional[int] = None
+    # POST, from a merge-aware window: the rev it last synced to, and for each experiment it
+    # edited, the version that edit started from. Experiments without a base are not written.
+    since: Optional[int] = None
+    bases: Optional[Dict[str, Experiment]] = None
 
 class UploadResponse(BaseModel):
     filename: str

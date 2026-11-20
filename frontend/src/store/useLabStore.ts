@@ -8,30 +8,33 @@ import type {
   PriorityLevel,
   ViewState,
   FilterState,
+  FilterKey,
   ELNBlock,
+  SyncConflict,
   WorkflowPhaseKey,
-  BuiltinWorkflowPhaseKey,
   CustomPhase,
   CalendarEventItem,
   NodePosition,
 } from '../types/lab';
 import {
-  WORKFLOW_PHASES,
-  checkAllPhasesCompleted,
-  checkAllPhasesScheduled,
   getExperimentPhases,
   getExperimentPhaseData,
 } from '../types/lab';
 import { PAPER_COLORS } from '../utils/colors';
+import { withDeviation, withExperimentUpdates, withPhaseUpdate } from '../utils/experimentUpdates';
+import { foldChanges, markSent, normalizeExperimentPhases, pendingEdits, startFrom, sync } from '../utils/labSync';
+import type { RemoteChanges } from '../utils/labSync';
 import { alertDialog } from './useDialogStore';
 
 export const DEFAULT_FILTERS: FilterState = {
   status: [],
   paper: [],
   priority: [],
+  deviations: [],
   statusNot: false,
   paperNot: false,
   priorityNot: false,
+  deviationsNot: false,
 };
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -47,17 +50,20 @@ interface LabStore extends LabState {
   isSaving: boolean;
   lastSavedAt: Date | null;
   loadError: string | null;
+  conflicts: SyncConflict[];
+  loadConflicts: () => Promise<void>;
+  resolveConflict: (id: string, choice: 'keep' | 'other') => Promise<void>;
 
   // Actions
   fetchInitialState: () => Promise<void>;
   saveState: () => Promise<void>;
   setView: (view: ViewState) => void;
   setFilter: (key: keyof FilterState, value: any) => void;
-  toggleFilterValue: (key: 'status' | 'paper' | 'priority', value: string) => void;
-  setFilterValues: (key: 'status' | 'paper' | 'priority', values: string[]) => void;
-  toggleFilterNot: (key: 'status' | 'paper' | 'priority') => void;
-  setFilterNot: (key: 'status' | 'paper' | 'priority', isNot: boolean) => void;
-  clearFilter: (key: 'status' | 'paper' | 'priority') => void;
+  toggleFilterValue: (key: FilterKey, value: string) => void;
+  setFilterValues: (key: FilterKey, values: string[]) => void;
+  toggleFilterNot: (key: FilterKey) => void;
+  setFilterNot: (key: FilterKey, isNot: boolean) => void;
+  clearFilter: (key: FilterKey) => void;
   resetFilters: () => void;
   openModal: (expId: string, fullScreen?: boolean, phaseKey?: string) => void;
   closeModal: () => void;
@@ -130,6 +136,7 @@ interface LabStore extends LabState {
     expId: string,
     updates: Partial<Experiment>
   ) => void;
+  logDeviation: (projectId: string, expId: string, phaseKey: string, text: string) => void;
   updatePhaseSchedule: (
     projectId: string,
     expId: string,
@@ -177,16 +184,8 @@ interface LabStore extends LabState {
 
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
-function normalizeExperimentPhases(phases?: (WorkflowPhaseKey | string)[]): WorkflowPhaseKey[] | undefined {
-  if (!phases) return undefined;
-  return phases.map((p) => {
-    const raw = String(p);
-    if (raw === 'Protocol') return 'experimentalProtocol';
-    if (raw === 'Acquisition') return 'dataAcquisition';
-    if (raw === 'Analysis') return 'dataAnalysis';
-    return raw as WorkflowPhaseKey;
-  });
-}
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+const POLL_MS = 3000; // how soon a phone edit shows up in an open window
 
 function normalizeProjects(projects: Project[]): Project[] {
   return (projects || []).map((p) => {
@@ -222,6 +221,23 @@ export const useLabStore = create<LabStore>((set, get) => ({
   isSaving: false,
   lastSavedAt: null,
   loadError: null,
+  conflicts: [],
+  loadConflicts: async () => {
+    try {
+      const res = await fetch('/api/sync/conflicts');
+      if (res.ok) set({ conflicts: await res.json() });
+    } catch {
+      // the next poll tries again
+    }
+  },
+  resolveConflict: async (id, choice) => {
+    await fetch(`/api/sync/conflicts/${encodeURIComponent(id)}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ choice }),
+    });
+    await get().loadConflicts();
+  },
   snapToGrid:
     typeof window !== 'undefined'
       ? localStorage.getItem('lab_snap_grid') !== 'false'
@@ -271,8 +287,28 @@ export const useLabStore = create<LabStore>((set, get) => ({
     try {
       const res = await fetch('/api/lab/state');
       if (res.ok) {
-        const data: LabState = await res.json();
+        const data: LabState & { rev?: number } = await res.json();
         const normalizedProjects = normalizeProjects(data.projects);
+        startFrom(normalizedProjects, data.rev);
+        void get().loadConflicts();
+        if (sync.rev !== null && !pollTimer) {
+          pollTimer = setInterval(async () => {
+            if (sync.rev === null || get().isSaving) return;
+            try {
+              const poll = await fetch(`/api/lab/changes?since=${sync.rev}`);
+              if (!poll.ok) return;
+              const changes: RemoteChanges = await poll.json();
+              if (changes.experiments.length || changes.deleted.length || changes.projects.length) {
+                set((s) => ({ projects: foldChanges(s.projects, changes) }));
+                void get().loadConflicts();
+              } else {
+                sync.rev = Math.max(sync.rev ?? 0, changes.rev);
+              }
+            } catch {
+              // backend restarting or gone: the next tick tries again
+            }
+          }, POLL_MS);
+        }
         set({
           projects: normalizedProjects,
           papers: data.papers,
@@ -298,6 +334,11 @@ export const useLabStore = create<LabStore>((set, get) => ({
   saveState: async () => {
     if (saveTimeout) clearTimeout(saveTimeout);
     saveTimeout = setTimeout(async () => {
+      // one save at a time: a second one would send bases older than the first just wrote
+      if (get().isSaving) {
+        get().saveState();
+        return;
+      }
       const state = {
         projects: get().projects,
         papers: get().papers,
@@ -309,13 +350,23 @@ export const useLabStore = create<LabStore>((set, get) => ({
         console.error('LocalStorage save error', e);
       }
 
+      const { sent, bases } = pendingEdits(state.projects);
+
       set({ isSaving: true });
       try {
-        await fetch('/api/lab/state', {
+        const res = await fetch('/api/lab/state', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(state),
+          body: JSON.stringify(sync.rev === null ? state : { ...state, since: sync.rev, bases }),
         });
+        if (res.ok) {
+          markSent(sent);
+          const data: { changes?: RemoteChanges } = await res.json();
+          if (data.changes) {
+            const changes = data.changes;
+            set((s) => ({ projects: foldChanges(s.projects, changes) }));
+          }
+        }
       } catch (e) {
         console.warn('Could not sync to backend API', e);
       } finally {
@@ -328,7 +379,7 @@ export const useLabStore = create<LabStore>((set, get) => ({
 
   setFilter: (key, value) =>
     set((state) => {
-      if (key === 'status' || key === 'paper' || key === 'priority') {
+      if (key === 'status' || key === 'paper' || key === 'priority' || key === 'deviations') {
         const newValues = Array.isArray(value)
           ? value
           : value === ''
@@ -361,7 +412,7 @@ export const useLabStore = create<LabStore>((set, get) => ({
 
   toggleFilterNot: (key) =>
     set((state) => {
-      const notKey = `${key}Not` as 'statusNot' | 'paperNot' | 'priorityNot';
+      const notKey = `${key}Not` as `${FilterKey}Not`;
       return {
         filters: { ...state.filters, [notKey]: !state.filters[notKey] },
       };
@@ -369,7 +420,7 @@ export const useLabStore = create<LabStore>((set, get) => ({
 
   setFilterNot: (key, isNot) =>
     set((state) => {
-      const notKey = `${key}Not` as 'statusNot' | 'paperNot' | 'priorityNot';
+      const notKey = `${key}Not` as `${FilterKey}Not`;
       return {
         filters: { ...state.filters, [notKey]: isNot },
       };
@@ -377,7 +428,7 @@ export const useLabStore = create<LabStore>((set, get) => ({
 
   clearFilter: (key) =>
     set((state) => {
-      const notKey = `${key}Not` as 'statusNot' | 'paperNot' | 'priorityNot';
+      const notKey = `${key}Not` as `${FilterKey}Not`;
       return {
         filters: {
           ...state.filters,
@@ -747,35 +798,9 @@ export const useLabStore = create<LabStore>((set, get) => ({
 
   updateExperiment: (projectId, expId, updates) => {
     set((state) => ({
-      projects: state.projects.map((p) => {
-        if (p.id !== projectId) return p;
-        return {
-          ...p,
-          exps: p.exps.map((e) => {
-            if (e.id !== expId) return e;
-            const updated = { ...e, ...updates };
-
-            // When status is not explicitly provided in updates:
-            if (!('status' in updates)) {
-              if (checkAllPhasesCompleted(updated)) {
-                updated.status = 'Done';
-              } else if (
-                ('experimentalProtocolCompleted' in updates ||
-                  'dataAcquisitionCompleted' in updates ||
-                  'dataAnalysisCompleted' in updates) &&
-                e.status === 'Done'
-              ) {
-                // If a phase was marked incomplete on a previously Done experiment, revert to Running
-                updated.status = 'Running';
-              } else if (updated.status === 'Planning' && checkAllPhasesScheduled(updated)) {
-                updated.status = 'Planned';
-              }
-            }
-
-            return updated;
-          }),
-        };
-      }),
+      projects: state.projects.map((p) =>
+        p.id !== projectId ? p : { ...p, exps: p.exps.map((e) => (e.id === expId ? withExperimentUpdates(e, updates) : e)) }
+      ),
     }));
     get().saveState();
   },
@@ -821,65 +846,17 @@ export const useLabStore = create<LabStore>((set, get) => ({
 
   updatePhase: (projectId, expId, phaseKey, data) => {
     set((state) => ({
-      projects: state.projects.map((p) => {
-        if (p.id !== projectId) return p;
-        return {
-          ...p,
-          exps: p.exps.map((e) => {
-            if (e.id !== expId) return e;
-            const updated = { ...e };
-            const meta = WORKFLOW_PHASES[phaseKey as BuiltinWorkflowPhaseKey];
-            if (meta) {
-              if (data.startDate !== undefined) updated[meta.startKey!] = data.startDate.trim();
-              if (data.endDate !== undefined) updated[meta.endKey!] = data.endDate.trim();
-              if (data.duration !== undefined) updated[meta.durationKey!] = data.duration;
-              if (data.completed !== undefined) updated[meta.completedKey!] = data.completed;
-              if (data.content !== undefined) (updated as any)[phaseKey] = data.content;
-            } else {
-              const currentCustom = e.customPhases || [];
-              const exists = currentCustom.some((cp) => cp.id === phaseKey);
-              const nextCustom = exists
-                ? currentCustom.map((cp) =>
-                    cp.id === phaseKey
-                      ? {
-                          ...cp,
-                          ...(data.startDate !== undefined ? { startDate: data.startDate.trim() } : {}),
-                          ...(data.endDate !== undefined ? { endDate: data.endDate.trim() } : {}),
-                          ...(data.duration !== undefined ? { duration: data.duration } : {}),
-                          ...(data.completed !== undefined ? { completed: data.completed } : {}),
-                          ...(data.content !== undefined ? { content: data.content } : {}),
-                          ...(data.name !== undefined ? { name: data.name.trim() } : {}),
-                        }
-                      : cp
-                  )
-                : [
-                    ...currentCustom,
-                    {
-                      id: phaseKey,
-                      name: data.name?.trim() || phaseKey,
-                      startDate: data.startDate?.trim() || '',
-                      endDate: data.endDate?.trim() || '',
-                      duration: data.duration || '',
-                      completed: Boolean(data.completed),
-                      content: data.content || '',
-                    },
-                  ];
-              updated.customPhases = nextCustom;
-            }
-
-            if (checkAllPhasesCompleted(updated)) {
-              updated.status = 'Done';
-            } else if (data.completed === false && e.status === 'Done') {
-              updated.status = 'Running';
-            } else if (updated.status === 'Planning' && checkAllPhasesScheduled(updated)) {
-              updated.status = 'Planned';
-            }
-            return updated;
-          }),
-        };
-      }),
+      projects: state.projects.map((p) =>
+        p.id !== projectId ? p : { ...p, exps: p.exps.map((e) => (e.id === expId ? withPhaseUpdate(e, phaseKey, data) : e)) }
+      ),
     }));
     get().saveState();
+  },
+
+  logDeviation: (projectId, expId, phaseKey, text) => {
+    const exp = get().projects.find((p) => p.id === projectId)?.exps.find((e) => e.id === expId);
+    if (!text.trim() || !exp) return;
+    get().updateExperiment(projectId, expId, withDeviation(exp, phaseKey, text, 'desktop'));
   },
 
   updatePhaseSchedule: (projectId, expId, phaseKey, startDate, endDate) => {
@@ -1032,7 +1009,7 @@ export const useLabStore = create<LabStore>((set, get) => ({
         return {
           ...p,
           exps: p.exps.map((e) =>
-            e.id === expId ? { ...e, blocks: [...e.blocks, block] } : e
+            e.id === expId ? { ...e, blocks: [...e.blocks, { ...block, id: block.id || crypto.randomUUID() }] } : e
           ),
         };
       }),

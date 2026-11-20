@@ -30,7 +30,9 @@ class SectionAttachmentTest(unittest.TestCase):
             restored = get_lab_state(session)
             exp = restored.projects[0].exps[0]
             self.assertEqual(exp.purpose, state.projects[0].exps[0].purpose)
-            self.assertEqual([b.model_dump() for b in exp.blocks], [b.model_dump() for b in state.projects[0].exps[0].blocks])
+            self.assertTrue(all(b.id for b in exp.blocks))  # the save gives every block a stable id
+            self.assertEqual([b.model_dump(exclude={"id"}) for b in exp.blocks],
+                             [b.model_dump(exclude={"id"}) for b in state.projects[0].exps[0].blocks])
             # A subsequent ordinary save must not strip ownership or file metadata.
             exp.notes = "Changed after upload"
             save_lab_state(session, restored)

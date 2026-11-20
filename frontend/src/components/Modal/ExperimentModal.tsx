@@ -10,9 +10,12 @@ import {
 } from '../../types/lab';
 import { STATUS_LIST, PRIORITY_LIST } from '../../utils/colors';
 import { SectionAttachments } from './SectionAttachments';
+import { PhaseDeviations } from './PhaseDeviations';
+import { SectionConflicts } from './SectionConflicts';
 import { ExperimentNavigation } from './ExperimentNavigation';
 import { EnlargedImagePreview } from './EnlargedImagePreview';
 import { sectionBlocks, sectionOwnership } from '../../utils/sectionAttachments';
+import { phaseDate } from '../../utils/schedule';
 import {
   X,
   Maximize2,
@@ -162,8 +165,8 @@ function getWorkflowInfo(exp: Experiment, key: string) {
       phaseKey: 'experimentalProtocol',
       durationVal: exp.experimentalProtocolDuration || '',
       isCompleted: Boolean(exp.experimentalProtocolCompleted),
-      startDate: exp.experimentalProtocolStartDate || '',
-      endDate: exp.experimentalProtocolEndDate || '',
+      startDate: phaseDate(exp.experimentalProtocolStartDate),
+      endDate: phaseDate(exp.experimentalProtocolEndDate),
     };
   }
   if (key === 'dataAcquisition') {
@@ -171,8 +174,8 @@ function getWorkflowInfo(exp: Experiment, key: string) {
       phaseKey: 'dataAcquisition',
       durationVal: exp.dataAcquisitionDuration || '',
       isCompleted: Boolean(exp.dataAcquisitionCompleted),
-      startDate: exp.dataAcquisitionStartDate || '',
-      endDate: exp.dataAcquisitionEndDate || '',
+      startDate: phaseDate(exp.dataAcquisitionStartDate),
+      endDate: phaseDate(exp.dataAcquisitionEndDate),
     };
   }
   if (key === 'dataAnalysis') {
@@ -180,8 +183,8 @@ function getWorkflowInfo(exp: Experiment, key: string) {
       phaseKey: 'dataAnalysis',
       durationVal: exp.dataAnalysisDuration || '',
       isCompleted: Boolean(exp.dataAnalysisCompleted),
-      startDate: exp.dataAnalysisStartDate || '',
-      endDate: exp.dataAnalysisEndDate || '',
+      startDate: phaseDate(exp.dataAnalysisStartDate),
+      endDate: phaseDate(exp.dataAnalysisEndDate),
     };
   }
   const custom = (exp.customPhases || []).find((p) => p.id === key);
@@ -190,8 +193,8 @@ function getWorkflowInfo(exp: Experiment, key: string) {
       phaseKey: custom.id,
       durationVal: custom.duration || '',
       isCompleted: Boolean(custom.completed),
-      startDate: custom.startDate || '',
-      endDate: custom.endDate || '',
+      startDate: phaseDate(custom.startDate),
+      endDate: phaseDate(custom.endDate),
     };
   }
   return null;
@@ -960,6 +963,7 @@ const ExperimentEditor: React.FC<ExperimentEditorProps> = ({ experimentId: activ
                 {/* Section Content */}
                 {!isCollapsed && (
                   <div className={`${isModalFullScreen ? 'py-3' : 'p-3'} space-y-3`}>
+                    <SectionConflicts experimentId={currentExp.id} sectionKey={sec.key} />
                     {isModalFullScreen ? (
                       <Suspense fallback={<p className="text-xs text-[var(--mut)]">Loading text editor…</p>}>
                         <SectionTextEditor label={sec.label} value={val} onChange={(value) => handleSectionTextChange(sec.key, value)}
@@ -997,6 +1001,11 @@ const ExperimentEditor: React.FC<ExperimentEditorProps> = ({ experimentId: activ
                           : sec.minHeight
                       }`}
                     />
+                    )}
+
+                    {sec.hasWorkflowFields && (
+                      <PhaseDeviations projectId={currentProject.id} experimentId={currentExp.id}
+                        phaseKey={sec.key} label={sec.label} entries={currentExp.deviations?.[sec.key] || []} />
                     )}
 
                     {!isModalFullScreen && <SectionAttachments
