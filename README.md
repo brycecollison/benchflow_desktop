@@ -570,6 +570,11 @@ write in; the OneDrive backup is what carries a notebook between machines.
 Dates are the day the work was checked against a build, not the day it was written.
 The web app is the reference implementation — see `UPSTREAM.md` for which commit was vendored.
 
+### 1.1.1 — 2026-11-20 — dialogs fit short screens
+
+Prompt and confirm dialogs taller than the window (long messages, several select fields) now scroll
+inside the window instead of being clipped, so Cancel/OK stay reachable on a phone or a short window.
+
 ### 1.1.0 — 2026-11-20 — Android companion and phone sync
 
 Phone sync over Tailscale (`docs/adr/0002-mobile-sync.md`), and the phone app itself (`mobile/`).

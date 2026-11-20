@@ -135,7 +135,7 @@ export const GlobalDialogModal: React.FC = () => {
       role="dialog"
       aria-modal="true"
     >
-      <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl shadow-2xl max-w-md w-full overflow-hidden text-[var(--ink)] animate-in zoom-in-95 duration-150 flex flex-col">
+      <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl shadow-2xl max-w-md w-full max-h-[calc(100dvh-2rem)] overflow-y-auto text-[var(--ink)] animate-in zoom-in-95 duration-150">
         {/* Header */}
         <div className="px-5 pt-5 pb-3 flex items-start gap-3.5">
           <div
